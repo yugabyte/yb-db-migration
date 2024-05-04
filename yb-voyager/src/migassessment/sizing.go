@@ -200,7 +200,8 @@ func SizingAssessment(assessmentDir string) error {
 }
 
 /*
-pickBestRecommendation selects the best recommendation from a map of recommendations based on certain criteria.
+pickBestRecommendation selects the best recommendation from a map of recommendations by optimizing for the cores. Hence,
+we chose the setup where the number of cores is less.
 Parameters:
   - recommendation: A map where the key is the number of vCPUs per instance and the value is an IntermediateRecommendation struct.
 
@@ -216,7 +217,8 @@ func pickBestRecommendation(recommendation map[int]IntermediateRecommendation) I
 
 	// Iterate over each recommendation
 	for _, rec := range recommendation {
-		// Update maxCores with the maximum number of vCPUs per instance across recommendations
+		// Update maxCores with the maximum number of vCPUs per instance across recommendations. If none of the cores
+		// abe to satisfy the criteria, recommendation with maxCores will be used as final recommendation
 		if maxCores < rec.VCPUsPerInstance {
 			maxCores = rec.VCPUsPerInstance
 		}
@@ -854,12 +856,12 @@ Returns:
 func getReasoning(recommendation IntermediateRecommendation, shardedObjects []SourceDBMetadata, colocatedObjects []SourceDBMetadata) string {
 	// Calculate size and throughput of colocated objects
 	colocatedObjectsSize, colocatedReads, colocatedWrites := getObjectsSize(colocatedObjects)
-	reasoning := fmt.Sprintf("Recommended instance type with %v vCPU and %vGiB memory could fit ",
+	reasoning := fmt.Sprintf("Recommended instance type with %v vCPU and %v GiB memory could fit ",
 		recommendation.VCPUsPerInstance, recommendation.VCPUsPerInstance*recommendation.MemoryPerCore)
 
 	// Add information about colocated objects if they exist
 	if len(colocatedObjects) > 0 {
-		reasoning += fmt.Sprintf("%v object(s) with %0.4fGB size and throughput requirement of %v reads/sec"+
+		reasoning += fmt.Sprintf("%v object(s) with %0.4f GB size and throughput requirement of %v reads/sec"+
 			" and %v writes/sec as colocated.", len(colocatedObjects), colocatedObjectsSize, colocatedReads,
 			colocatedWrites)
 	}
@@ -868,12 +870,12 @@ func getReasoning(recommendation IntermediateRecommendation, shardedObjects []So
 		// Calculate size and throughput of sharded objects
 		shardedObjectsSize, shardedReads, shardedWrites := getObjectsSize(shardedObjects)
 		// Construct reasoning for sharded objects
-		shardedReasoning := fmt.Sprintf("%v object(s) with %0.4fGB size and throughput requirement of %v reads/sec"+
+		shardedReasoning := fmt.Sprintf("%v object(s) with %0.4f GB size and throughput requirement of %v reads/sec"+
 			" and %v writes/sec ", len(shardedObjects), shardedObjectsSize,
 			shardedReads, shardedWrites)
 		// If colocated objects exist, add sharded objects information as rest of the objects need to be migrated as sharded
 		if len(colocatedObjects) > 0 {
-			reasoning += " Rest " + shardedReasoning + "need to be migrated as sharded."
+			reasoning += " Rest " + shardedReasoning + " need to be migrated as range partitioned tables"
 		} else {
 			reasoning += shardedReasoning + "as sharded."
 		}
