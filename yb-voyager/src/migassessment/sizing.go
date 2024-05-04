@@ -278,12 +278,14 @@ func findNumNodesNeeded(sourceIndexMetadata []SourceDBMetadata, shardedLimits []
 			math.Ceil(float64(cumulativeSelectOpsPerSec)/shardedLimit.maxSupportedSelectsPerCore.Float64 +
 				float64(cumulativeInsertOpsPerSec)/shardedLimit.maxSupportedInsertsPerCore.Float64)
 
-		// assumption - one node has been taken over by colocated. TBD. Need to fix this.
-		nodesNeeded := math.Ceil(neededCores/shardedLimit.numCores.Float64) + 1
-		// assumption - rf3 setups only. Fix this
-		if nodesNeeded < 3 {
-			nodesNeeded = 3
+		nodesNeeded := math.Ceil(neededCores / shardedLimit.numCores.Float64)
+		// If there are any colocated objects - one node will be utilized as colocated tablet leader. Add it explicitly.
+		if len(previousRecommendation.ColocatedTables) > 0 {
+			nodesNeeded += 1
 		}
+
+		// minimum required replication is 3, so minimum nodes recommended would be 3. Choose max of nodes needed and 3
+		nodesNeeded = math.Max(nodesNeeded, 3)
 
 		// Update recommendation with the number of nodes needed
 		recommendation[int(shardedLimit.numCores.Float64)] = IntermediateRecommendation{
@@ -704,7 +706,7 @@ Returns:
 */
 func calculateTimeTakenAndParallelJobsForImport(tableName string, dbObjects []SourceDBMetadata,
 	vCPUPerInstance int, memPerCore int) (float64, int64, error) {
-	// the total size of colocated objects
+	// the total size of objects
 	var size float64 = 0
 	var timeTakenOfFetchedRow float64
 	var maxSizeOfFetchedRow float64
@@ -729,8 +731,8 @@ func calculateTimeTakenAndParallelJobsForImport(tableName string, dbObjects []So
 		WHERE csv_size_gb = (
 			SELECT MAX(csv_size_gb) 
 			FROM %v
-			WHERE num_cores = ?
 		) 
+		AND num_cores = ?
 		LIMIT 1;
 	`, tableName, tableName, tableName)
 	row := ExperimentDB.QueryRow(selectQuery, vCPUPerInstance, memPerCore, size, vCPUPerInstance)
