@@ -94,7 +94,7 @@ func assessMigration() (err error) {
 	// setting schemaDir to use later on - gather assessment metadata, segregating into schema files per object etc..
 	schemaDir = filepath.Join(assessmentMetadataDir, "schema")
 
-	checkStartCleanForAssessMigration(assessmentMetadataDirFlag != "")
+	/*checkStartCleanForAssessMigration(assessmentMetadataDirFlag != "")
 	CreateMigrationProjectIfNotExists(source.DBType, exportDir)
 
 	err = retrieveMigrationUUID()
@@ -119,9 +119,9 @@ func assessMigration() (err error) {
 	err = populateMetadataCSVIntoAssessmentDB()
 	if err != nil {
 		return fmt.Errorf("failed to populate metadata CSV into SQLite DB: %w", err)
-	}
+	}*/
 
-	err = runAssessment()
+	err = runAssessment(filepath.Join(exportDir, "assessment"))
 	if err != nil {
 		utils.PrintAndLog("failed to run assessment: %v", err)
 	}
@@ -178,10 +178,10 @@ func createMigrationAssessmentCompletedEvent() *cp.MigrationAssessmentCompletedE
 	return ev
 }
 
-func runAssessment() error {
+func runAssessment(assessmentDir string) error {
 	log.Infof("running assessment for migration from '%s' to YugabyteDB", source.DBType)
 
-	err := migassessment.SizingAssessment()
+	err := migassessment.SizingAssessment(assessmentDir)
 	if err != nil {
 		log.Errorf("failed to perform sizing and sharding assessment: %v", err)
 		return fmt.Errorf("failed to perform sizing and sharding assessment: %w", err)
@@ -386,21 +386,21 @@ var bytesTemplate []byte
 func generateAssessmentReport() (err error) {
 	utils.PrintAndLog("Generating assessment report...")
 
-	err = getAssessmentReportContentFromAnalyzeSchema()
-	if err != nil {
-		return fmt.Errorf("failed to generate assessment report content from analyze schema: %w", err)
-	}
+	/*	err = getAssessmentReportContentFromAnalyzeSchema()
+		if err != nil {
+			return fmt.Errorf("failed to generate assessment report content from analyze schema: %w", err)
+		}
 
-	assessmentReport.UnsupportedDataTypes, err = fetchColumnsWithUnsupportedDataTypes()
-	if err != nil {
-		return fmt.Errorf("failed to fetch columns with unsupported data types: %w", err)
-	}
+		assessmentReport.UnsupportedDataTypes, err = fetchColumnsWithUnsupportedDataTypes()
+		if err != nil {
+			return fmt.Errorf("failed to fetch columns with unsupported data types: %w", err)
+		}
 
-	assessmentReport.Sizing = migassessment.SizingReport
-	assessmentReport.TableIndexStats, err = assessmentDB.FetchAllStats()
-	if err != nil {
-		return fmt.Errorf("fetching all stats info from AssessmentDB: %w", err)
-	}
+		assessmentReport.Sizing = migassessment.SizingReport
+		assessmentReport.TableIndexStats, err = assessmentDB.FetchAllStats()
+		if err != nil {
+			return fmt.Errorf("fetching all stats info from AssessmentDB: %w", err)
+		}*/
 
 	assessmentReportDir := filepath.Join(exportDir, "assessment", "reports")
 	err = generateAssessmentReportJson(assessmentReportDir)
