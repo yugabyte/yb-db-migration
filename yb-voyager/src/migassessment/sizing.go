@@ -332,9 +332,9 @@ func checkShardedTableLimit(sourceIndexMetadata []SourceDBMetadata, shardedLimit
 		// Check if total object count exceeds the max supported num tables limit
 		if totalObjectCount > shardedLimit.maxSupportedNumTables.Int64 {
 			// Generate failure reasoning
-			failureReasoning := fmt.Sprintf("Cannot support %v sharded objects on a machine with %v cores and %v "+
-				"memory per core", totalObjectCount, previousRecommendation.VCPUsPerInstance,
-				previousRecommendation.MemoryPerCore)
+			failureReasoning := fmt.Sprintf("Cannot support %v sharded objects on a machine with %v cores "+
+				"and %vGiB memory.", totalObjectCount, previousRecommendation.VCPUsPerInstance,
+				previousRecommendation.VCPUsPerInstance*previousRecommendation.MemoryPerCore)
 
 			// Update recommendation with failure reasoning
 			recommendation[int(shardedLimit.numCores.Float64)] = IntermediateRecommendation{
