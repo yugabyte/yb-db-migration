@@ -10,7 +10,7 @@ jobs:
   run-pg-migration-tests:
     strategy:
       matrix:
-        version: [2.21.0.0-b545, 2.16.9.0-b67, 2.18.7.0-b30, 2.20.2.2-b1]
+        version: [2.21.0.0-b545, 2.18.7.0-b30, 2.20.3.0-b68]
         BETA_FAST_DATA_EXPORT: [0, 1]
     env:
       BETA_FAST_DATA_EXPORT: ${{ matrix.BETA_FAST_DATA_EXPORT }}
@@ -119,19 +119,16 @@ jobs:
         run: migtests/scripts/run-test.sh pg/indexes
 
       - name: "TEST: pg-partitions"
-        run: migtests/scripts/run-test.sh pg/partitions
-        if: matrix.version != '2.16.9.0-b67' # Now pg/partitions's schema has PK as well so because of same issue with pg-partitions-with-indexes, skipping this test for v2.16.9.0-b67 
+        run: migtests/scripts/run-test.sh pg/partitions 
 
 
       - name: "TEST: pg-partitions with (table-list)"
         run: EXPORT_TABLE_LIST='customers,sales,emp,p2.boston,p2.london,p2.sydney,range_columns_partition_test,sales_region,test_partitions_sequences' migtests/scripts/run-test.sh pg/partitions 
-        if: matrix.version != '2.16.9.0-b67' # Now pg/partitions's schema has PK as well so because of same issue with pg-partitions-with-indexes, skipping this test for v2.16.9.0-b67 
 
       # Broken for v2.15 and v2.16: https://github.com/yugabyte/yugabyte-db/issues/14529
       # Fixed in 2.17.1.0-b368
       - name: "TEST: pg-partitions-with-indexes"
         run: migtests/scripts/run-test.sh pg/partitions-with-indexes
-        if: matrix.version != '2.16.9.0-b67'
 
       - name: "TEST: pg-views-and-rules"
         run: migtests/scripts/run-test.sh pg/views-and-rules
@@ -179,21 +176,21 @@ jobs:
       # case sensitive table names are not yet supported in live migration, to restricting test only to a few tables.
       - name: "TEST: pg-live-migration-multiple-schemas"
         run: EXPORT_TABLE_LIST="ext_test,tt,audit,recipients,session_log,schema2.ext_test,schema2.tt,schema2.audit,schema2.recipients,schema2.session_log" migtests/scripts/live-migration-run-test.sh  pg/multiple-schemas
-        if: matrix.version != '2.16.9.0-b67'
+
 
       - name: "TEST: pg-basic-public-fall-forward-test"
         run: migtests/scripts/live-migration-fallf-run-test.sh pg/basic-public-live-test
-        if: matrix.version != '2.16.9.0-b67'
+
       
       - name: "TEST: pg-basic-non-public-fall-back-test"
         run: migtests/scripts/live-migration-fallb-run-test.sh pg/basic-non-public-live-test
-        if: matrix.version != '2.16.9.0-b67'
+
 
       - name: "TEST: pg-live-migration-partitions-fall-forward"
         run: migtests/scripts/live-migration-fallf-run-test.sh pg/partitions
-        if: matrix.version != '2.16.9.0-b67' # Now pg/partitions's schema has PK as well so because of same issue with pg-partitions-with-indexes, skipping this test for v2.16.9.0-b67
+
       
       - name: "TEST: pg-case-sensitivity-reserved-words-offline"
         run: migtests/scripts/run-test.sh pg/case-sensitivity-reserved-words
-        if: matrix.version != '2.16.9.0-b67'
+
       

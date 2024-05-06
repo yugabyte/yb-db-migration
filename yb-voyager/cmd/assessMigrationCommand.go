@@ -30,9 +30,9 @@ import (
 	"text/template"
 
 	"github.com/samber/lo"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/migassessment"
@@ -54,8 +54,8 @@ type UnsupportedFeature struct {
 
 var assessMigrationCmd = &cobra.Command{
 	Use:   "assess-migration",
-	Short: "Assess the migration from source database to YugabyteDB.",
-	Long:  `Assess the migration from source database to YugabyteDB.`,
+	Short: "Assess the migration from source (PostgreSQL) database to YugabyteDB.",
+	Long:  `Assess the migration from source (PostgreSQL) database to YugabyteDB.`,
 
 	PreRun: func(cmd *cobra.Command, args []string) {
 		validateSourceDBTypeForAssessMigration()
@@ -74,10 +74,51 @@ var assessMigrationCmd = &cobra.Command{
 	},
 }
 
+func registerSourceDBConnFlagsForAM(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&source.DBType, "source-db-type", "",
+		"source database type: (postgresql)\n")
+
+	cmd.Flags().StringVar(&source.Host, "source-db-host", "localhost",
+		"source database server host")
+
+	cmd.Flags().IntVar(&source.Port, "source-db-port", 0,
+		"source database server port number. Default: PostgreSQL(5432)")
+
+	cmd.Flags().StringVar(&source.User, "source-db-user", "",
+		"connect to source database as the specified user")
+
+	// TODO: All sensitive parameters can be taken from the environment variable
+	cmd.Flags().StringVar(&source.Password, "source-db-password", "",
+		"source password to connect as the specified user. Alternatively, you can also specify the password by setting the environment variable SOURCE_DB_PASSWORD. If you don't provide a password via the CLI, yb-voyager will prompt you at runtime for a password. If the password contains special characters that are interpreted by the shell (for example, # and $), enclose the password in single quotes.")
+
+	cmd.Flags().StringVar(&source.DBName, "source-db-name", "",
+		"source database name to be migrated to YugabyteDB")
+
+	cmd.Flags().StringVar(&source.Schema, "source-db-schema", "",
+		"source schema name(s) to export\n"+
+			`Note: in case of multiple schemas, use a comma separated list of schemas: "schema1,schema2,schema3"`)
+
+	// TODO SSL related more args will come. Explore them later.
+	cmd.Flags().StringVar(&source.SSLCertPath, "source-ssl-cert", "",
+		"Path of the file containing source SSL Certificate")
+
+	cmd.Flags().StringVar(&source.SSLMode, "source-ssl-mode", "prefer",
+		"specify the source SSL mode out of: (disable, allow, prefer, require, verify-ca, verify-full)")
+
+	cmd.Flags().StringVar(&source.SSLKey, "source-ssl-key", "",
+		"Path of the file containing source SSL Key")
+
+	cmd.Flags().StringVar(&source.SSLRootCert, "source-ssl-root-cert", "",
+		"Path of the file containing source SSL Root Certificate")
+
+	cmd.Flags().StringVar(&source.SSLCRL, "source-ssl-crl", "",
+		"Path of the file containing source SSL Root Certificate Revocation List (CRL)")
+}
+
 func init() {
 	rootCmd.AddCommand(assessMigrationCmd)
 	registerCommonGlobalFlags(assessMigrationCmd)
-	registerSourceDBConnFlags(assessMigrationCmd, false, false)
+	registerSourceDBConnFlagsForAM(assessMigrationCmd)
 
 	BoolVar(assessMigrationCmd.Flags(), &startClean, "start-clean", false,
 		"cleans up the project directory for schema or data files depending on the export command (default false)")
@@ -209,7 +250,7 @@ func checkStartCleanForAssessMigration(metadataDirPassedByUser bool) {
 			utils.CleanDir(filepath.Join(assessmentDir, "reports"))
 			utils.CleanDir(filepath.Join(assessmentDir, "dbs"))
 		} else {
-			utils.ErrExit("assessment metadata or reports files already exist in the assessment directory at '%s'. ", assessmentDir)
+			utils.ErrExit("assessment metadata or reports files already exist in the assessment directory at '%s'. Use the --start-clean flag to clear the directory before proceeding.", assessmentDir)
 		}
 	}
 }

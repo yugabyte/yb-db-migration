@@ -260,3 +260,8 @@ class PostgresDB:
 		cur = self.conn.cursor()
 		cur.execute(f"SELECT length({column}) FROM {schema_name}.{table_name} WHERE {primary_key} = {id}")
 		return cur.fetchone()[0]
+	
+	def check_table_colocation(self, table_name, schema_name="public") -> bool:
+		cur = self.conn.cursor()
+		cur.execute(f"SELECT is_colocated FROM yb_table_properties('\"{schema_name}\".\"{table_name}\"'::regclass);")
+		return cur.fetchone()[0]

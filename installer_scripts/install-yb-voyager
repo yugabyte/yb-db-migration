@@ -125,7 +125,9 @@ main() {
 centos_main() {
 	# if major version is greater than or equal to 8 then disable postgresql module
 	version=$(source /etc/os-release; echo "$VERSION_ID")
-	res=$(vercomp "$version" "8")
+	# Extract only the major version
+	majorVersion=$(echo $version | cut -d '.' -f 1)
+	res=$(vercomp "$majorVersion" "8")
 	if [ "$res" -eq 0 ] || [ "$res" -eq 1 ]; then
     	sudo dnf -qy module disable postgresql 1>&2
 	fi
@@ -140,7 +142,7 @@ centos_main() {
 	centos_check_base_repo_enabled
 	output "Installing RPM dependencies."
 	$YUM which wget git gcc make 1>&2
-	$YUM https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm 1>&2 || true
+	$YUM https://download.postgresql.org/pub/repos/yum/reporpms/EL-${majorVersion}-x86_64/pgdg-redhat-repo-latest.noarch.rpm 1>&2 || true
 	$YUM postgresql14 1>&2
 	$YUM sqlite 1>&2
 	create_pg_dump_args_file
@@ -148,7 +150,7 @@ centos_main() {
 	install_golang linux
 	if [ $ONLY_PG == "false" ] ; then
 		$YUM perl perl-DBI perl-App-cpanminus 1>&2
-		$YUM mysql-devel 1>&2
+		centos_install_mysql_client $majorVersion
 		$YUM perl-ExtUtils-MakeMaker 1>&2
 		centos_install_oracle_instant_clients
 		update_yb_voyager_bashrc
@@ -663,7 +665,7 @@ install_ora2pg() {
 	ora2pg_license_acknowledgement
 
 	output "Installing perl DB drivers required for ora2pg."
-	sudo cpanm DBD::mysql@4.051 Test::NoWarnings@1.04 DBD::Oracle@1.82 1>&2
+	sudo cpanm DBD::mysql@5.005 Test::NoWarnings@1.06 DBD::Oracle@1.83 1>&2
 
 	output "Installing ora2pg."
 	wget -nv https://github.com/darold/ora2pg/archive/${ORA2PG_VERSION}.tar.gz 1>&2
@@ -783,6 +785,20 @@ create_gather_assessment_metadata_dir() {
 #=============================================================================
 # CENTOS
 #=============================================================================
+
+centos_install_mysql_client() {
+	version=$1
+	# If version is greater than or equal to 8 then dont install from community repo
+	if [ "$version" -ge 8 ]; then
+		$YUM mysql-devel 1>&2
+		return
+	fi
+	link=https://dev.mysql.com/get/mysql84-community-release-el${version}-1.noarch.rpm
+	wget $link
+	sudo yum remove -y mysql84-community-release-el${version}-1 1>&2 
+	sudo yum install -y mysql84-community-release-el${version}-1.noarch.rpm 1>&2
+	sudo yum install -y mysql-community-devel 1>&2
+}
 
 centos_check_base_repo_enabled() {
 

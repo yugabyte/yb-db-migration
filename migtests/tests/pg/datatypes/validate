@@ -46,9 +46,22 @@ EXPECTED_SUM_OF_COLUMN = {
 EXPECTED_ENUM_VALUES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 EXPECTED_BYTE_TYPE_VALUES = ['3031303130', '2d61626364', '34343538']
 
+#Due to the large sized source database requirements all tables will come up as colocated for now
+EXPECTED_COLOCATION_OF_TABLES = {
+	'num_types': 't',   
+	'datatypes1': 't',  
+	'datetime_type': 't', 
+	'datatypes2': 't',
+	'datetime_type2': 't', 
+	'null_and_default' : 't',
+	'decimal_types': 't',
+}
+
 def migration_completed_checks_yb():
 	print("Running tests on YB")
 	yb.run_checks(migration_completed_checks)
+ 
+	yb.run_checks(YB_specific_checks) 
 
 def migration_completed_checks_ff():
 	print("Running tests on PG source replica")
@@ -130,6 +143,13 @@ def migration_completed_checks(tgt):
 	tgt.assert_all_values_of_col("null_and_default", "val", "public", expected_values=["testdefault", None])
 	tgt.assert_all_values_of_col("null_and_default", "i", "public", expected_values=[10, None])
 	tgt.assert_all_values_of_col("null_and_default", "b", "public", expected_values=[False, None])
+
+def YB_specific_checks(tgt):
+	print("Verifying the colocation of the tables")
+	for table_name, expected_colocation in EXPECTED_COLOCATION_OF_TABLES.items():
+		actual_colocation = tgt.check_table_colocation(table_name)
+		assert actual_colocation == (expected_colocation == 't'), f"Table '{table_name}' colocation mismatch. Expected: {expected_colocation}, Actual: {actual_colocation}"
+
 
 if __name__ == "__main__":
 	main()

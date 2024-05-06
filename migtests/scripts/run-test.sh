@@ -59,6 +59,22 @@ main() {
 	step "Check the Voyager version installed"
 	yb-voyager version
 
+	step "Assess Migration"
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
+		assess_migration
+
+		step "Validate Assessment Reports"
+		# Checking if the assessment reports were created
+		if [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.json" ]; then
+			echo "Assessment reports created successfully."
+			#TODO: Further validation to be added
+		else
+			echo "Error: Assessment reports were not created successfully."
+			cat_log_file "yb-voyager-assess-migration.log"
+			exit 1
+		fi
+	fi
+
 	step "Export schema."
 	export_schema
 	find ${EXPORT_DIR}/schema -name '*.sql' -printf "'%p'\n"| xargs grep -wh CREATE
@@ -98,7 +114,11 @@ main() {
 
 	step "Create target database."
 	run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
-	run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME}"
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
+		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME} with COLOCATION=TRUE"
+	else
+		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME}"
+	fi
 
 	if [ -x "${TEST_DIR}/add-pk-from-alter-to-create" ]
 	then
