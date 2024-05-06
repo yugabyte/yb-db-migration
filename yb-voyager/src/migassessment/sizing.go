@@ -279,12 +279,14 @@ func findNumNodesNeeded(sourceIndexMetadata []SourceDBMetadata, shardedLimits []
 				float64(cumulativeInsertOpsPerSec)/shardedLimit.maxSupportedInsertsPerCore.Float64)
 
 		nodesNeeded := math.Ceil(neededCores / shardedLimit.numCores.Float64)
-		// If there are any colocated objects - one node will be utilized as colocated tablet leader. Add it explicitly.
+		// Assumption: If there are any colocated objects - one node will be utilized as colocated tablet leader.
+		// Add it explicitly.
 		if len(previousRecommendation.ColocatedTables) > 0 {
 			nodesNeeded += 1
 		}
 
-		// minimum required replication is 3, so minimum nodes recommended would be 3. Choose max of nodes needed and 3
+		// Assumption: minimum required replication is 3, so minimum nodes recommended would be 3.
+		// Choose max of nodes needed and 3
 		nodesNeeded = math.Max(nodesNeeded, 3)
 
 		// Update recommendation with the number of nodes needed
