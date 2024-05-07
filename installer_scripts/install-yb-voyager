@@ -450,6 +450,7 @@ rebuild_debezium_server_voyager_plugin_local(){
 rebuild_voyager_local() {
 	VERSION="local"
 	install_yb_voyager
+	create_gather_assessment_metadata_dir
 	rebuild_debezium_server_voyager_plugin_local
 }
 

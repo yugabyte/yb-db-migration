@@ -24,8 +24,9 @@ BEGIN
             WHERE table_schema = schema_name AND table_type = 'BASE TABLE' 
         LOOP
             -- Execute dynamic SQL to insert row count data into temp_table
+            -- For now, setting 0 as row count because count(*) is too slow (SELECT %L, %L, COUNT(*) FROM %I.%I')
             EXECUTE format(
-                'INSERT INTO temp_table (schema_name, table_name, row_count) SELECT %L, %L, COUNT(*) FROM %I.%I',
+                'INSERT INTO temp_table (schema_name, table_name, row_count) VALUES ( %L, %L, 0 )',
                 table_record.table_schema,
                 table_record.table_name,
                 table_record.table_schema,

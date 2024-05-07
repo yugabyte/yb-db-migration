@@ -95,6 +95,8 @@ const (
 	GITHUB_RAW_LINK          = "https://raw.githubusercontent.com/yugabyte/yb-voyager/main/yb-voyager/src/migassessment/resources"
 	EXPERIMENT_DATA_FILENAME = "yb_2024_0_source.db"
 	DBS_DIR                  = "dbs"
+	SIZE_UNIT_GB             = "GB"
+	SIZE_UNIT_MB             = "MB"
 )
 
 var ExperimentDB *sql.DB
@@ -864,26 +866,26 @@ Returns:
 func getReasoning(recommendation IntermediateRecommendation, shardedObjects []SourceDBMetadata,
 	cumulativeIndexCountSharded int, colocatedObjects []SourceDBMetadata, cumulativeIndexCountColocated int) string {
 	// Calculate size and throughput of colocated objects
-	colocatedObjectsSize, colocatedReads, colocatedWrites := getObjectsSize(colocatedObjects)
+	colocatedObjectsSize, colocatedReads, colocatedWrites, sizeUnitColocated := getObjectsSize(colocatedObjects)
 	reasoning := fmt.Sprintf("Recommended instance type with %v vCPU and %v GiB memory could fit ",
 		recommendation.VCPUsPerInstance, recommendation.VCPUsPerInstance*recommendation.MemoryPerCore)
 
 	// Add information about colocated objects if they exist
 	if len(colocatedObjects) > 0 {
-		reasoning += fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.4f GB size and throughput "+
+		reasoning += fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.2f %v size and throughput "+
 			"requirement of %v reads/sec and %v writes/sec as colocated.", len(colocatedObjects),
 			len(colocatedObjects)-cumulativeIndexCountColocated, cumulativeIndexCountColocated, colocatedObjectsSize,
-			colocatedReads, colocatedWrites)
+			sizeUnitColocated, colocatedReads, colocatedWrites)
 	}
 	// Add information about sharded objects if they exist
 	if len(shardedObjects) > 0 {
 		// Calculate size and throughput of sharded objects
-		shardedObjectsSize, shardedReads, shardedWrites := getObjectsSize(shardedObjects)
+		shardedObjectsSize, shardedReads, shardedWrites, sizeUnitSharded := getObjectsSize(shardedObjects)
 		// Construct reasoning for sharded objects
-		shardedReasoning := fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.4f GB size and throughput "+
+		shardedReasoning := fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.2f %v size and throughput "+
 			"requirement of %v reads/sec and %v writes/sec ", len(shardedObjects),
 			len(shardedObjects)-cumulativeIndexCountSharded, cumulativeIndexCountSharded, shardedObjectsSize,
-			shardedReads, shardedWrites)
+			sizeUnitSharded, shardedReads, shardedWrites)
 		// If colocated objects exist, add sharded objects information as rest of the objects need to be migrated as sharded
 		if len(colocatedObjects) > 0 {
 			reasoning += " Rest " + shardedReasoning + " need to be migrated as range partitioned tables"
@@ -903,12 +905,14 @@ Parameters:
 Returns:
   - The total size of the objects (in float64 representing GB).
   - The total number of select operations per second across all objects (in int64).
-  - The total number of insert operations per second across all objects (in int64)
+  - The total number of insert operations per second across all objects (in int64).
+  - The size unit for the total size
 */
-func getObjectsSize(objects []SourceDBMetadata) (float64, int64, int64) {
+func getObjectsSize(objects []SourceDBMetadata) (float64, int64, int64, string) {
 	var objectsSize float64 = 0
 	var objectSelectOps int64 = 0
 	var objectInsertOps int64 = 0
+	var sizeUnit = SIZE_UNIT_GB
 
 	for _, object := range objects {
 		// Accumulate size and throughput values
@@ -916,8 +920,14 @@ func getObjectsSize(objects []SourceDBMetadata) (float64, int64, int64) {
 		objectSelectOps += object.ReadsPerSec
 		objectInsertOps += object.WritesPerSec
 	}
+	// if object size is less than 1 GB, convert it to MB
+	if objectsSize < 1 {
+		sizeUnit = SIZE_UNIT_MB
+		objectsSize = objectsSize * 1024
+	}
+
 	// Return the accumulated size and throughput values
-	return objectsSize, objectSelectOps, objectInsertOps
+	return objectsSize, objectSelectOps, objectInsertOps, sizeUnit
 }
 
 /*
