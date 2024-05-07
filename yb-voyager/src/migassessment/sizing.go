@@ -161,8 +161,10 @@ func SizingAssessment(assessmentDir string) error {
 		return fmt.Errorf("error picking best recommendation: %v", finalSizingRecommendation.FailureReasoning)
 	}
 
-	colocatedObjects := getListOfIndexesAlongWithObjects(finalSizingRecommendation.ColocatedTables, sourceIndexMetadata)
-	shardedObjects := getListOfIndexesAlongWithObjects(finalSizingRecommendation.ShardedTables, sourceIndexMetadata)
+	colocatedObjects, cumulativeIndexCountColocated :=
+		getListOfIndexesAlongWithObjects(finalSizingRecommendation.ColocatedTables, sourceIndexMetadata)
+	shardedObjects, cumulativeIndexCountSharded :=
+		getListOfIndexesAlongWithObjects(finalSizingRecommendation.ShardedTables, sourceIndexMetadata)
 
 	// calculate time taken for colocated import
 	importTimeForColocatedObjects, parallelVoyagerJobsColocated, err :=
@@ -181,17 +183,19 @@ func SizingAssessment(assessmentDir string) error {
 		SizingReport.FailureReasoning = fmt.Sprintf("calculate time taken for sharded data import: %v", err)
 		return fmt.Errorf("calculate time taken for sharded data import: %w", err)
 	}
+	reasoning := getReasoning(finalSizingRecommendation, shardedObjects, cumulativeIndexCountSharded, colocatedObjects,
+		cumulativeIndexCountColocated)
 
 	sizingRecommendation := &SizingRecommendation{
-		ColocatedTables:                 fetchObjectNames(colocatedObjects),
-		ShardedTables:                   fetchObjectNames(shardedObjects),
+		ColocatedTables:                 fetchObjectNames(finalSizingRecommendation.ColocatedTables),
+		ShardedTables:                   fetchObjectNames(finalSizingRecommendation.ShardedTables),
 		VCPUsPerInstance:                finalSizingRecommendation.VCPUsPerInstance,
 		MemoryPerInstance:               finalSizingRecommendation.VCPUsPerInstance * finalSizingRecommendation.MemoryPerCore,
 		NumNodes:                        finalSizingRecommendation.NumNodes,
 		OptimalSelectConnectionsPerNode: finalSizingRecommendation.OptimalSelectConnectionsPerNode,
 		OptimalInsertConnectionsPerNode: finalSizingRecommendation.OptimalInsertConnectionsPerNode,
 		ParallelVoyagerJobs:             math.Min(float64(parallelVoyagerJobsColocated), float64(parallelVoyagerJobsSharded)),
-		ColocatedReasoning:              getReasoning(finalSizingRecommendation, shardedObjects, colocatedObjects),
+		ColocatedReasoning:              reasoning,
 		EstimatedTimeInMinForImport:     importTimeForColocatedObjects + importTimeForShardedObjects,
 	}
 	SizingReport.SizingRecommendation = *sizingRecommendation
@@ -857,7 +861,8 @@ Parameters:
 Returns:
   - A string describing the reasoning behind the recommendation.
 */
-func getReasoning(recommendation IntermediateRecommendation, shardedObjects []SourceDBMetadata, colocatedObjects []SourceDBMetadata) string {
+func getReasoning(recommendation IntermediateRecommendation, shardedObjects []SourceDBMetadata,
+	cumulativeIndexCountSharded int, colocatedObjects []SourceDBMetadata, cumulativeIndexCountColocated int) string {
 	// Calculate size and throughput of colocated objects
 	colocatedObjectsSize, colocatedReads, colocatedWrites := getObjectsSize(colocatedObjects)
 	reasoning := fmt.Sprintf("Recommended instance type with %v vCPU and %v GiB memory could fit ",
@@ -865,17 +870,19 @@ func getReasoning(recommendation IntermediateRecommendation, shardedObjects []So
 
 	// Add information about colocated objects if they exist
 	if len(colocatedObjects) > 0 {
-		reasoning += fmt.Sprintf("%v object(s) with %0.4f GB size and throughput requirement of %v reads/sec"+
-			" and %v writes/sec as colocated.", len(colocatedObjects), colocatedObjectsSize, colocatedReads,
-			colocatedWrites)
+		reasoning += fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.4f GB size and throughput "+
+			"requirement of %v reads/sec and %v writes/sec as colocated.", len(colocatedObjects),
+			len(colocatedObjects)-cumulativeIndexCountColocated, cumulativeIndexCountColocated, colocatedObjectsSize,
+			colocatedReads, colocatedWrites)
 	}
 	// Add information about sharded objects if they exist
 	if len(shardedObjects) > 0 {
 		// Calculate size and throughput of sharded objects
 		shardedObjectsSize, shardedReads, shardedWrites := getObjectsSize(shardedObjects)
 		// Construct reasoning for sharded objects
-		shardedReasoning := fmt.Sprintf("%v object(s) with %0.4f GB size and throughput requirement of %v reads/sec"+
-			" and %v writes/sec ", len(shardedObjects), shardedObjectsSize,
+		shardedReasoning := fmt.Sprintf("%v objects(%v tables and %v indexes) with %0.4f GB size and throughput "+
+			"requirement of %v reads/sec and %v writes/sec ", len(shardedObjects),
+			len(shardedObjects)-cumulativeIndexCountSharded, cumulativeIndexCountSharded, shardedObjectsSize,
 			shardedReads, shardedWrites)
 		// If colocated objects exist, add sharded objects information as rest of the objects need to be migrated as sharded
 		if len(colocatedObjects) > 0 {
@@ -921,17 +928,22 @@ Parameters:
 
 Returns:
   - A slice of SourceDBMetadata structs containing both indexes and tables.
+  - total indexes of the tables
 */
-func getListOfIndexesAlongWithObjects(tableList []SourceDBMetadata, sourceIndexMetadata []SourceDBMetadata) []SourceDBMetadata {
+func getListOfIndexesAlongWithObjects(tableList []SourceDBMetadata,
+	sourceIndexMetadata []SourceDBMetadata) ([]SourceDBMetadata, int) {
 	var indexesAndObject []SourceDBMetadata
+	var cumulativeIndexCount int = 0
+
 	for _, table := range tableList {
 		// Check and fetch indexes for the current table
 		indexes, _, _, _ := checkAndFetchIndexes(table, sourceIndexMetadata)
 		indexesAndObject = append(indexesAndObject, indexes...)
 		indexesAndObject = append(indexesAndObject, table)
+		cumulativeIndexCount += len(indexes)
 	}
 	// Return the slice containing both indexes and tables
-	return indexesAndObject
+	return indexesAndObject, cumulativeIndexCount
 }
 
 func createConnectionToExperimentData(assessmentDir string) error {
