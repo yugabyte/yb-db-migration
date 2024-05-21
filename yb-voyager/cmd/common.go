@@ -975,3 +975,17 @@ func (ar *AssessmentReport) GetColocatedTablesRecommendation() ([]string, error)
 
 	return ar.Sizing.SizingRecommendation.ColocatedTables, nil
 }
+
+func (ar *AssessmentReport) GetClusterSizingRecommendation() string {
+	if ar.Sizing == nil {
+		return ""
+	}
+
+	if ar.Sizing.FailureReasoning != "" {
+		return ar.Sizing.FailureReasoning
+	}
+
+	return fmt.Sprintf("Num Nodes: %f, vCPU per instance: %d, Memory per instance: %d, Estimated Import Time: %f minutes",
+		ar.Sizing.SizingRecommendation.NumNodes, ar.Sizing.SizingRecommendation.VCPUsPerInstance,
+		ar.Sizing.SizingRecommendation.MemoryPerInstance, ar.Sizing.SizingRecommendation.EstimatedTimeInMinForImport)
+}

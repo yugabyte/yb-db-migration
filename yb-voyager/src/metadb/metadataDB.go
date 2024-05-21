@@ -331,7 +331,7 @@ func UpdateJsonObjectInMetaDB[T any](m *MetaDB, key string, updateFn func(obj *T
 	}
 	defer func() {
 		err := tx.Rollback()
-		if err != nil {
+		if err != nil && !errors.Is(err, sql.ErrTxDone) {
 			log.Errorf("failed to rollback transaction on meta db: %v", err)
 		}
 	}()

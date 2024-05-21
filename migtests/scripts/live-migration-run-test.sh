@@ -67,6 +67,7 @@ main() {
 		# Checking if the assessment reports were created
 		if [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.json" ]; then
 			echo "Assessment reports created successfully."
+			validate_failure_reasoning "${EXPORT_DIR}/assessment/reports/assessmentReport.json"
 			#TODO: Further validation to be added
 		else
 			echo "Error: Assessment reports were not created successfully."

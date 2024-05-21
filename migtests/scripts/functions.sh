@@ -664,6 +664,7 @@ assess_migration() {
 		--source-db-name ${SOURCE_DB_NAME}
 		--send-diagnostics=false --yes
 		--start-clean t
+		--iops-capture-interval 0
 	"
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
 	then
@@ -690,6 +691,21 @@ assess_migration() {
 	fi
 	
 	yb-voyager assess-migration ${args} $*
+}
+
+validate_failure_reasoning() {
+    assessment_report="$1"
+
+    # Check if FailureReasoning is empty or not
+    failure_reasoning=$(jq -r '.Sizing.FailureReasoning' "$assessment_report")
+    if [ -z "$failure_reasoning" ]; then
+        echo "FailureReasoning is empty. Assessment passed."
+    else
+        echo "Error: FailureReasoning is not empty. Assessment failed."
+        echo "FailureReasoning: $failure_reasoning"
+        cat_log_file "yb-voyager-assess-migration.log"
+        exit 1
+    fi
 }
 
 

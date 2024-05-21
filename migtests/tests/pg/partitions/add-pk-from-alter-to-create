@@ -27,7 +27,10 @@ for i in range(len(create_tables)):
         columns = match.group(2)
 
         # Add the primary key constraint to the CREATE TABLE statement
-        create_table = create_tables[i] + '    PRIMARY KEY (' + columns + '),\n'
+        if "WITH" in create_tables[i]:
+            create_table = create_tables[i].replace(') WITH', ',' + 'PRIMARY KEY (' +  columns + ')) WITH')
+        else:
+            create_table = create_tables[i] + '    PRIMARY KEY (' + columns + '),\n'
         output.append(create_table)
 
 with open(table_file_path, 'w') as file:

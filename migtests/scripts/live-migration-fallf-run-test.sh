@@ -76,6 +76,7 @@ main() {
 		# Checking if the assessment reports were created
 		if [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.json" ]; then
 			echo "Assessment reports created successfully."
+			validate_failure_reasoning "${EXPORT_DIR}/assessment/reports/assessmentReport.json"
 			#TODO: Further validation to be added
 		else
 			echo "Error: Assessment reports were not created successfully."
@@ -250,6 +251,15 @@ main() {
 
 	step "Run final validations."
 	"${TEST_DIR}/validateAfterChanges" --ff_enabled 'true' --fb_enabled 'false'
+
+	step "Run get data-migration-report"
+	get_data_migration_report
+
+	expected_file="${TEST_DIR}/data-migration-report-live-migration-fallf.json"
+	actual_file="${EXPORT_DIR}/reports/data-migration-report.json"
+
+	step "Verify data-migration-report report"
+	verify_report ${expected_file} ${actual_file}
 
 	step "End Migration: clearing metainfo about state of migration from everywhere."
 	end_migration --yes

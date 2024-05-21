@@ -11,11 +11,11 @@ ARGS_LINUX=$@
 VERSION="latest"
 
 # This needs to be changed to the latest debezium release tag
-VOYAGER_RELEASE_TAG=${VOYAGER_RELEASE_TAG:-"v1.6.5"}
-DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-1.6.5"}
+VOYAGER_RELEASE_TAG=${VOYAGER_RELEASE_TAG:-"v1.7.0"}
+DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-1.7.0"}
 
-# the hash corresponds to the yb-voyager/v1.6.5 tag
-YB_VOYAGER_GIT_HASH="05e9d3db3dd3c8dfda1f4167ac552c736563872f" 
+# the hash corresponds to the yb-voyager/v1.7.0 tag
+YB_VOYAGER_GIT_HASH="3fcc7396dd78fe187a5861c92c006b274b111771" 
 
 
 ONLY_PG="false"
@@ -42,7 +42,7 @@ DEBEZIUM_LOCAL_REF=${DEBEZIUM_LOCAL_REF:-"3a8a497a8403794d69ce2f781989ad12c40601
 DEBEZIUM_LOCAL_SERVER_REF=${DEBEZIUM_LOCAL_SERVER_REF:-"c4cad64f6d1869bcd15531c8f9cef98c651f86cc"}
 DEBEZIUM_LOCAL_REF_1X=${DEBEZIUM_LOCAL_REF_1X:-"78ff67c054bec08bcad060968b24bfc9ba8b2112"}
 DEBEZIUM_LOCAL_INSTALLATION_DESTINATION=${DEBEZIUM_LOCAL_INSTALLATION_DESTINATION:-"/opt/yb-voyager"}
-DEBEZIUM_YUGABYTE_CONNECTOR_URL="https://github.com/yugabyte/debezium-connector-yugabytedb/releases/download/v1.9.5.y.33.2/debezium-connector-yugabytedb-1.9.5.y.33.2.jar"
+DEBEZIUM_YUGABYTE_CONNECTOR_URL="https://github.com/yugabyte/debezium-connector-yugabytedb/releases/download/v1.9.5.y.220.1/debezium-connector-yugabytedb-1.9.5.y.220.1.jar"
 
 # only rebuild voyager
 REBUILD_VOYAGER_LOCAL="false"
@@ -769,9 +769,7 @@ create_gather_assessment_metadata_dir() {
 	output "Installing the latest scripts for gathering assessment metadata"
 	if [ "${VERSION}" == "latest" ]
 	then
-		# TODO: Replace the YB_VOYAGER_GIT_HASH_TEMP with the release tagged YB_VOYAGER_GIT_HASH
-		YB_VOYAGER_GIT_HASH_TEMP="bd6c645fb233880d282c9691a7df6583bea0ec06"
-		TAR_URL="https://github.com/yugabyte/yb-voyager/raw/$YB_VOYAGER_GIT_HASH_TEMP/$scripts_dir_path/${scripts_dir_name}.tar.gz"
+		TAR_URL="https://github.com/yugabyte/yb-voyager/raw/$YB_VOYAGER_GIT_HASH/$scripts_dir_path/${scripts_dir_name}.tar.gz"
 		sudo wget -nv -O /tmp/${scripts_dir_name}.tar.gz $TAR_URL
 		sudo tar -xzf /tmp/${scripts_dir_name}.tar.gz -C $scripts_parent_dir 1>&2
 		sudo rm /tmp/${scripts_dir_name}.tar.gz
@@ -840,25 +838,38 @@ ubuntu_install_postgres() {
 
 ubuntu_install_oracle_instant_clients() {
 	output "Installing Oracle Instant Clients."
-	sudo apt-get -y install alien 1>&2
+	wget https://s3.us-west-2.amazonaws.com/downloads.yugabyte.com/repos/reporpms/yb-apt-repo_1.0.0_all.deb
+	sudo apt-get install -y ./yb-apt-repo_1.0.0_all.deb 1>&2
+	sudo apt-get update -y 1>&2
 	ubuntu_install_oic oracle-instantclient-tools
 	ubuntu_install_oic oracle-instantclient-basic
 	ubuntu_install_oic oracle-instantclient-devel
 	ubuntu_install_oic oracle-instantclient-jdbc
 	ubuntu_install_oic oracle-instantclient-sqlplus
+	sudo apt-get remove -y yb-apt-repo 1>&2
+	rm -f yb-apt-repo_1.0.0_all.deb 1>&2
 	output "Installed Oracle Instance Clients."
 }
 
 ubuntu_install_oic() {
-	if dpkg -l | grep -q -w $1
-	then
-		echo "$1 is already installed."
-	else
-		rpm_name="$1-21.5.0.0.0-1.x86_64.rpm"
-		wget -nv https://download.oracle.com/otn_software/linux/instantclient/215000/${rpm_name} 1>&2
-		sudo alien -i ${rpm_name} 1>&2
-		rm ${rpm_name}
-	fi
+	local package_name="$1"
+	expected_version="21.5.0.0.0-1"
+    
+    # Check if package is installed
+    if dpkg -l | grep -q "$package_name"; then
+        # Extract installed version
+        installed_version=$(dpkg -l | grep "$package_name" | awk '{print $3}')
+        # Check if installed version is greater than or equal to 21.5.0.0.0-1
+        if dpkg --compare-versions "$installed_version" ">=" "$expected_version"; then
+            output "$package_name is already installed and up to date."
+        else
+            # Install specific version
+            sudo apt-get install -y "$package_name=$expected_version" 1>&2
+        fi
+    else
+        # Install if package is not installed
+        sudo apt-get install -y "$package_name=$expected_version" 1>&2
+    fi
 }
 
 #=============================================================================

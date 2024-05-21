@@ -331,10 +331,6 @@ func updateImportedEventsCountsInTheRow(sourceDBType string, row *rowData, table
 		return fmt.Errorf("failed to initialize the target DB: %w", err)
 	}
 	defer tdb.Finalize()
-	err = tdb.InitConnPool()
-	if err != nil {
-		return fmt.Errorf("failed to initialize the target DB connection pool: %w", err)
-	}
 	state := NewImportDataState(exportDir)
 
 	if importerRole != SOURCE_DB_IMPORTER_ROLE {

@@ -252,7 +252,7 @@ func reportSchemaSummary(sourceDBConf *srcdb.Source) utils.SchemaSummary {
 
 	if !tconf.ImportMode && sourceDBConf != nil { // this info is available only if we are exporting from source
 		schemaSummary.DBName = sourceDBConf.DBName
-		schemaSummary.SchemaName = sourceDBConf.Schema
+		schemaSummary.SchemaNames = strings.Split(sourceDBConf.Schema, "|")
 		schemaSummary.DBVersion = sourceDBConf.DBVersion
 	}
 
@@ -927,7 +927,7 @@ func generateHTMLReport(Report utils.SchemaReport) string {
 	//Broad details
 	htmlstring := "<html><body bgcolor='#EFEFEF'><h1>Database Migration Report</h1>"
 	htmlstring += "<table><tr><th>Database Name</th><td>" + Report.SchemaSummary.DBName + "</td></tr>"
-	htmlstring += "<tr><th>Schema Name</th><td>" + Report.SchemaSummary.SchemaName + "</td></tr>"
+	htmlstring += "<tr><th>Schema Name(s)</th><td>" + strings.Join(Report.SchemaSummary.SchemaNames, ",") + "</td></tr>"
 	htmlstring += "<tr><th>" + strings.ToUpper(msr.SourceDBConf.DBType) + " Version</th><td>" + Report.SchemaSummary.DBVersion + "</td></tr></table>"
 
 	//Summary of report
@@ -986,7 +986,7 @@ func generateTxtReport(Report utils.SchemaReport) string {
 	txtstring += "| Database Migration Report |\n"
 	txtstring += "+---------------------------+\n"
 	txtstring += "Database Name\t" + Report.SchemaSummary.DBName + "\n"
-	txtstring += "Schema Name\t" + Report.SchemaSummary.SchemaName + "\n"
+	txtstring += "Schema Name(s)\t" + strings.Join(Report.SchemaSummary.SchemaNames, ",") + "\n"
 	txtstring += "DB Version\t" + Report.SchemaSummary.DBVersion + "\n\n"
 	txtstring += "Objects:\n\n"
 	//if names for json objects need to be changed make sure to change the tab spaces accordingly as well.

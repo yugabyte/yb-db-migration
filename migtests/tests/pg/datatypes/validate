@@ -146,6 +146,7 @@ def migration_completed_checks(tgt):
 
 def YB_specific_checks(tgt):
 	print("Verifying the colocation of the tables")
+	# TODO: fetch the expected table list from assessmentReport.json file
 	for table_name, expected_colocation in EXPECTED_COLOCATION_OF_TABLES.items():
 		actual_colocation = tgt.check_table_colocation(table_name)
 		assert actual_colocation == (expected_colocation == 't'), f"Table '{table_name}' colocation mismatch. Expected: {expected_colocation}, Actual: {actual_colocation}"

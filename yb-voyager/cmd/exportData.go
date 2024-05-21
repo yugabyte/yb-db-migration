@@ -232,7 +232,6 @@ func exportData() bool {
 	utils.PrintAndLog("table list for data export: %v", tableListToDisplay)
 
 	//finalTableList is with leaf partitions and root tables after this in the whole export flow to make all the catalog queries work fine
-
 	if changeStreamingIsEnabled(exportType) || useDebezium {
 		config, tableNametoApproxRowCountMap, err := prepareDebeziumConfig(partitionsToRootTableMap, finalTableList, tablesColumnList, leafPartitions)
 		if err != nil {

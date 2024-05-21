@@ -1,6 +1,8 @@
 {
         "DbName": "dummy_db_name",
-        "SchemaName": "public",
+        "SchemaNames": [
+            "public"
+        ],
         "DbVersion": "12.0",
         "DatabaseObjects": [
             {

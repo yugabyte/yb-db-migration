@@ -25,18 +25,22 @@ Collects PostgreSQL database statistics and schema information.
 Note: The order of the arguments is important and must be followed.
 
 Arguments:
-  pg_connection_string   PostgreSQL connection string in the format:
-                         'postgresql://username:password@hostname:port/dbname'
-                         Ensure this string is properly quoted to avoid shell interpretation issues.
+  pg_connection_string        PostgreSQL connection string in the format:
+                             'postgresql://username@hostname:port/dbname'
+                              Ensure this string is properly quoted to avoid shell interpretation issues.
 
-  schema_list            Pipe-separated list of schemas for which statistics are to be collected.
-                         Example: 'public|sales|inventory'
+  schema_list                 Pipe-separated list of schemas for which statistics are to be collected.
+                              Example: 'public|sales|inventory'
 
-  assessment_metadata_dir    The directory path where the assessment metadata will be stored.
-                         This script will attempt to create the directory if it does not exist.
+  assessment_metadata_dir     The directory path where the assessment metadata will be stored.
+                              This script will attempt to create the directory if it does not exist.
+
+  iops_capture_interval   This argument is used to configure the interval for measuring the IOPS 
+                               metadata on source (in seconds). (Default 120)
+                            
 
 Example:
-  PGPASSWORD=<password> $SCRIPT_NAME 'postgresql://user@localhost:5432/mydatabase' 'public,sales' '/path/to/assessment/metadata'
+  PGPASSWORD=<password> $SCRIPT_NAME 'postgresql://user@localhost:5432/mydatabase' 'public|sales' '/path/to/assessment/metadata' '60'
 
 Please ensure to replace the placeholders with actual values suited to your environment.
 "
@@ -48,14 +52,28 @@ if [ "$1" == "--help" ]; then
 fi
 
 # Check if all required arguments are provided
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $SCRIPT_NAME <pg_connection_string> <schema_list> <assessment_metadata_dir>"
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 <pg_connection_string> <schema_list> <assessment_metadata_dir> [iops_capture_interval]"
+    exit 1
+elif [ "$#" -gt 4 ]; then
+    echo "Usage: $0 <pg_connection_string> <schema_list> <assessment_metadata_dir> [iops_capture_interval]"
     exit 1
 fi
+
+# Set default iops interval
+iops_capture_interval=120
+
+# Override default sleep interval if a fourth argument is provided
+if [ "$#" -eq 4 ]; then
+    iops_capture_interval=$4
+    echo "Using sleep interval: $iops_capture_interval seconds"
+fi
+
 
 pg_connection_string=$1
 schema_list=$2
 assessment_metadata_dir=$3
+
 
 # check if assessment_metadata_dir exists, if not exit 1
 if [ ! -d "$assessment_metadata_dir" ]; then
@@ -99,7 +117,7 @@ for script in $SCRIPT_DIR/*.psql; do
         mv table-index-iops.csv table-index-iops-initial.csv
         
         # sleeping to calculate the iops reading two different time intervals, to calculate reads_per_second and writes_per_second
-        sleep 120 
+        sleep $iops_capture_interval 
         
         psql -q $pg_connection_string -f $script -v schema_list=$schema_list -v ON_ERROR_STOP=on -v measurement_type=final -v filename=$script_name-initial.csv
         mv table-index-iops.csv table-index-iops-final.csv
