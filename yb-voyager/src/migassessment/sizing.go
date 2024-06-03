@@ -92,17 +92,17 @@ const (
 	SHARDED_LOAD_TIME_TABLE   = "sharded_load_time"
 	// GITHUB_RAW_LINK use raw github link to fetch the file from repository using the api:
 	// https://raw.githubusercontent.com/{username-or-organization}/{repository}/{branch}/{path-to-file}
-	GITHUB_RAW_LINK                       = "https://raw.githubusercontent.com/yugabyte/yb-voyager/main/yb-voyager/src/migassessment/resources"
-	EXPERIMENT_DATA_FILENAME              = "yb_2024_0_source.db"
-	DBS_DIR                               = "dbs"
-	SIZE_UNIT_GB                          = "GB"
-	SIZE_UNIT_MB                          = "MB"
-	LOW_PHASE_SHARD_COUNT                 = 8
-	LOW_PHASE_SIZE_THRESHOLD_GB   float64 = 0.512
-	HIGH_PHASE_SHARD_COUNT                = 24
-	HIGH_PHASE_SIZE_THRESHOLD_GB  float64 = 10
-	FINAL_PHASE_SIZE_THRESHOLD_GB float64 = 100
-	MAX_TABLETS_PER_TABLE                 = 256
+	GITHUB_RAW_LINK               = "https://raw.githubusercontent.com/yugabyte/yb-voyager/main/yb-voyager/src/migassessment/resources"
+	EXPERIMENT_DATA_FILENAME      = "yb_2024_0_source.db"
+	DBS_DIR                       = "dbs"
+	SIZE_UNIT_GB                  = "GB"
+	SIZE_UNIT_MB                  = "MB"
+	LOW_PHASE_SHARD_COUNT         = 8
+	LOW_PHASE_SIZE_THRESHOLD_GB   = 0.512
+	HIGH_PHASE_SHARD_COUNT        = 24
+	HIGH_PHASE_SIZE_THRESHOLD_GB  = 10
+	FINAL_PHASE_SIZE_THRESHOLD_GB = 100
+	MAX_TABLETS_PER_TABLE         = 256
 )
 
 var ExperimentDB *sql.DB
@@ -334,8 +334,9 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 			for _, table := range rec.ShardedTables {
 				// check and fetch indexes size data for table
 				_, indexesSizeSum, _, _ := checkAndFetchIndexes(table, sourceIndexMetadata)
-				_, tabletsRequired := getThresholdAndTablets(table.Size + indexesSizeSum)
+				threshold, tabletsRequired := getThresholdAndTablets(table.Size + indexesSizeSum)
 				totalTabletsRequired += tabletsRequired
+				fmt.Printf("Table %s with size %f GB requires %d tablets from threshold %f", table.ObjectName, table.Size, tabletsRequired, threshold)
 			}
 			// assuming table limits is also a tablet limit
 			// get shardedLimit of current recommendation
@@ -371,29 +372,53 @@ Returns:
 Description:
 This function calculates which size threshold applies to a table based on its size and determines the number of tablets required.
 - For sizes up to the low phase limit (8 shards of 512 MB each, up to 4 GB), the low phase threshold is used.
+- Intermediate phase upto 80 GB is calculated based on 8 tablets of 10 GB each.
 - For sizes up to the high phase limit (24 shards of 10 GB each, up to 240 GB), the high phase threshold is used.
-- For larger sizes, the final phase threshold (100 GB) is used, with a maximum of 256 tablets per table.
+- For larger sizes, the final phase threshold (100 GB) is used.
 */
 func getThresholdAndTablets(sizeGB float64) (float64, int) {
-	var threshold float64
-	var tablets float64
+	var tablets = math.Ceil(sizeGB / LOW_PHASE_SIZE_THRESHOLD_GB)
 
-	if sizeGB <= LOW_PHASE_SIZE_THRESHOLD_GB*float64(LOW_PHASE_SHARD_COUNT) {
-		threshold = LOW_PHASE_SIZE_THRESHOLD_GB
-		tablets = math.Ceil(sizeGB / LOW_PHASE_SIZE_THRESHOLD_GB)
-	} else if sizeGB <= HIGH_PHASE_SIZE_THRESHOLD_GB*float64(HIGH_PHASE_SHARD_COUNT) {
-		threshold = HIGH_PHASE_SIZE_THRESHOLD_GB
-		tablets = math.Ceil(sizeGB / HIGH_PHASE_SIZE_THRESHOLD_GB)
+	if tablets <= LOW_PHASE_SHARD_COUNT {
+		// this means that table size is less than 4GB. So 8 tablets of 512MB each will be enough
+		return LOW_PHASE_SIZE_THRESHOLD_GB, int(tablets)
 	} else {
-		threshold = FINAL_PHASE_SIZE_THRESHOLD_GB
-		tablets = math.Ceil(sizeGB / FINAL_PHASE_SIZE_THRESHOLD_GB)
-		if tablets > MAX_TABLETS_PER_TABLE {
-			tablets = MAX_TABLETS_PER_TABLE
+		// this means that table size is more than 4GB.
+		// find out the per tablet size if it is less than 10GB which is high phase threshold
+		perTabletSize := sizeGB / LOW_PHASE_SHARD_COUNT
+		if perTabletSize <= HIGH_PHASE_SIZE_THRESHOLD_GB {
+			// tablet count is still 8 but the size of each tablet is less than 10GB(table size < 80GB). So same number of tablets could fit
+			return HIGH_PHASE_SIZE_THRESHOLD_GB, LOW_PHASE_SHARD_COUNT
+		} else {
+			// table size is > 80GB. So we need to increase the tablet count
+			tablets = math.Ceil(LOW_PHASE_SHARD_COUNT + (sizeGB-LOW_PHASE_SHARD_COUNT*HIGH_PHASE_SIZE_THRESHOLD_GB)/HIGH_PHASE_SIZE_THRESHOLD_GB)
+			if tablets <= HIGH_PHASE_SHARD_COUNT {
+				// this means that table size is less than 240GB. So tablets of 10GB each will be enough
+				return HIGH_PHASE_SIZE_THRESHOLD_GB, int(tablets)
+			} else {
+				// this means that table size is more than 240 GB.
+				// find out the per tablet size if it is less than 100GB which is final phase threshold
+				perTabletSize = sizeGB / HIGH_PHASE_SHARD_COUNT
+				if perTabletSize <= FINAL_PHASE_SIZE_THRESHOLD_GB {
+					// tablet count is still 24 but the size of each tablet is less than 100GB(table size < 2400GB). So same number of tablets could fit
+					return FINAL_PHASE_SIZE_THRESHOLD_GB, HIGH_PHASE_SHARD_COUNT
+				} else {
+					// table size is > 2400GB. So we need to increase the tablet count
+					tablets = math.Ceil(HIGH_PHASE_SHARD_COUNT + (sizeGB-HIGH_PHASE_SHARD_COUNT*FINAL_PHASE_SIZE_THRESHOLD_GB)/FINAL_PHASE_SIZE_THRESHOLD_GB)
+					if tablets <= MAX_TABLETS_PER_TABLE {
+						// this means that table size is less than 25600GB. So 256 tablets of 100GB each will be enough
+						return FINAL_PHASE_SIZE_THRESHOLD_GB, int(tablets)
+					} else {
+						// to support table size > 25600GB, tablets per table limit in YugabyteDB needs to be
+						// set to 0(meaning no limit). Refer doc:
+						//https://docs.yugabyte.com/preview/architecture/docdb-sharding/tablet-splitting/#final-phase
+						tablets = math.Ceil(MAX_TABLETS_PER_TABLE + (sizeGB-MAX_TABLETS_PER_TABLE*FINAL_PHASE_SIZE_THRESHOLD_GB)/FINAL_PHASE_SIZE_THRESHOLD_GB)
+						return FINAL_PHASE_SIZE_THRESHOLD_GB, int(tablets)
+					}
+				}
+			}
 		}
 	}
-	// considering each table will require at least 1 tablet
-	tablets = math.Max(1, tablets)
-	return threshold, int(tablets)
 }
 
 /*
