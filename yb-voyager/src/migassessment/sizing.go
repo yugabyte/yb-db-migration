@@ -344,11 +344,6 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 				if record.numCores.Valid && int(record.numCores.Float64) == rec.VCPUsPerInstance {
 					nodesRequired := math.Ceil(float64(totalTabletsRequired) / float64(record.maxSupportedNumTables.Int64))
 					// update recommendation to use the maximum of the existing recommended nodes and nodes calculated based on tablets
-					if nodesRequired > rec.NumNodes {
-						fmt.Printf("Tablets required %d, existing recommendation: %f new recommendation: %f\n", totalTabletsRequired, rec.NumNodes, nodesRequired)
-					} else {
-						fmt.Printf("Tablets required %d, existing recommendation: %f. Staying with current recommendation\n", totalTabletsRequired, rec.NumNodes)
-					}
 					rec.NumNodes = math.Max(rec.NumNodes, nodesRequired)
 					recommendation[index] = rec
 				}
@@ -380,30 +375,30 @@ func getThresholdAndTablets(sizeGB float64) (float64, int) {
 	var tablets = math.Ceil(sizeGB / LOW_PHASE_SIZE_THRESHOLD_GB)
 
 	if tablets <= LOW_PHASE_SHARD_COUNT {
-		// this means that table size is less than 4GB. So 8 tablets of 512MB each will be enough
+		// table size is less than 4GB, hence 8 tablets of 512MB each will be enough
 		return LOW_PHASE_SIZE_THRESHOLD_GB, int(tablets)
 	} else {
-		// this means that table size is more than 4GB.
+		// table size is more than 4GB.
 		// find out the per tablet size if it is less than 10GB which is high phase threshold
 		perTabletSize := sizeGB / LOW_PHASE_SHARD_COUNT
 		if perTabletSize <= HIGH_PHASE_SIZE_THRESHOLD_GB {
-			// tablet count is still 8 but the size of each tablet is less than 10GB(table size < 80GB). So same number of tablets could fit
+			// tablet count is still 8 but the size of each tablet is less than 10GB(table size < 80GB).
 			return HIGH_PHASE_SIZE_THRESHOLD_GB, LOW_PHASE_SHARD_COUNT
 		} else {
-			// table size is > 80GB. So we need to increase the tablet count
+			// table size is > 80GB, hence we need to increase the tablet count
 			tablets = math.Ceil(LOW_PHASE_SHARD_COUNT + (sizeGB-LOW_PHASE_SHARD_COUNT*HIGH_PHASE_SIZE_THRESHOLD_GB)/HIGH_PHASE_SIZE_THRESHOLD_GB)
 			if tablets <= HIGH_PHASE_SHARD_COUNT {
-				// this means that table size is less than 240GB. So tablets of 10GB each will be enough
+				// this means that table size is less than 240GB, hence 24 tablets of 10GB each will be enough
 				return HIGH_PHASE_SIZE_THRESHOLD_GB, int(tablets)
 			} else {
-				// this means that table size is more than 240 GB.
+				// table size is more than 240 GB.
 				// find out the per tablet size if it is less than 100GB which is final phase threshold
 				perTabletSize = sizeGB / HIGH_PHASE_SHARD_COUNT
 				if perTabletSize <= FINAL_PHASE_SIZE_THRESHOLD_GB {
-					// tablet count is still 24 but the size of each tablet is less than 100GB(table size < 2400GB). So same number of tablets could fit
+					// tablet count is still 24 but the size of each tablet is less than 100GB(table size < 2400GB).
 					return FINAL_PHASE_SIZE_THRESHOLD_GB, HIGH_PHASE_SHARD_COUNT
 				} else {
-					// table size is > 2400GB. So we need to increase the tablet count
+					// table size is > 2400GB, hence we need to increase the tablet count
 					tablets = math.Ceil(HIGH_PHASE_SHARD_COUNT + (sizeGB-HIGH_PHASE_SHARD_COUNT*FINAL_PHASE_SIZE_THRESHOLD_GB)/FINAL_PHASE_SIZE_THRESHOLD_GB)
 					if tablets <= MAX_TABLETS_PER_TABLE {
 						// this means that table size is less than 25600GB. So 256 tablets of 100GB each will be enough
