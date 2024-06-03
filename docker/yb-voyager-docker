@@ -54,7 +54,30 @@ for var_name in "${variables[@]}"; do
   fi
 done
 
+flags_to_store=("--source-ssl-cert"
+"--source-ssl-key"
+"--source-ssl-root-cert"
+" --source-ssl-crl"
+"--target-ssl-root-cert"
+"--target-ssl-crl"
+"--target-ssl-cert"
+"--target-ssl-key"
+"--source-replica-ssl-cert"
+"--source-replica-ssl-crl"
+"--source-replica-ssl-key"
+"--source-replica-ssl-root-cert")
+
 exported_vars="${exported_vars} -e ORACLE_HOME=/usr/lib/oracle/21/client64 -e LD_LIBRARY_PATH=/usr/lib/oracle/21/client64/lib -e PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/usr/local/go/bin:/usr/lib/oracle/21/client64/bin"
+
+# if command is like yb-voyager export data. The command name is export data.
+command_name=${argv[0]}-${argv[1]}
+# if argv[2] is "from" or "to" then command name is like import data from source or import data to target
+if [[ ${argv[2]} == "from" || ${argv[2]} == "to" ]]
+then
+	command_name=${argv[0]}-${argv[1]}-${argv[2]}-${argv[3]}
+fi
+command_metadata_file_name="/tmp/docker-metadata-${command_name}.txt"
+export_dir=""
 
 map_host_path_inside_container() {
 		flag_name=$1
@@ -84,6 +107,10 @@ map_host_path_inside_container() {
 		fi
 }
 
+if [ -f "$command_metadata_file_name" ]
+then
+	rm $command_metadata_file_name
+fi
 while [ $i -lt $# ]
 do
 	v=${argv[${i}]}
@@ -91,10 +118,19 @@ do
 	then
 		v="--export-dir"
 	fi
+	if [[ ${v} == "--export-dir" ]]
+	then
+		export_dir=${argv[$(( $i + 1 ))]}
+	fi
 	# if v is present in volume_dirs array
 	if [[ " ${volume_dirs[@]} " =~ " ${v} " ]]
 	then
 		map_host_path_inside_container
+		# If the flag is in flags_to_store array then save them in a local text file. Store both flag and the path in the file. Save each flag in a new line.
+        if [[ " ${flags_to_store[@]} " =~ " ${v} " ]]
+        then
+            echo "${v} ${dir_path}" >> $command_metadata_file_name
+        fi
 		i=$(( $i + 1))
 		continue
 	fi
@@ -152,9 +188,35 @@ do
     i=$(( $i + 1))
 done
 
+# If the metadata file exists then move it to the export_dir and overwrite any existing file.
+if [ -f "$command_metadata_file_name" -a -n "$export_dir" ]
+then
+	# Check if the meta directory exists in the export_dir. If not, create it.
+	if [ ! -d "$export_dir/metainfo" ]
+	then
+		mkdir -p $export_dir/metainfo
+	fi
+	mv $command_metadata_file_name $export_dir/metainfo
+fi
+
 if [ -t 1 ] 
 then 
 	tty="-it"
+fi
+
+# If the command is end migration or export data from target or import data to source or get data-migration-report then map the paths saved in the metadata files to the container.
+if [[ ${command_name} == "end-migration" || ${command_name} == "export-data-from-target" || ${command_name} == "import-data-to-source" || ${command_name} == "get-data-migration-report" ]]
+then
+    # There are multiple files saved in export dir which start with docker-metadata-*. Read each file and map the paths to the container.
+	for file in $(ls $export_dir/metainfo/docker-metadata-*)
+	do
+		while read line
+		do
+			flag_name=$(echo $line | awk '{print $1}')
+			dir_path=$(echo $line | awk '{print $2}')
+			map_host_path_inside_container $flag_name $dir_path
+		done < $file
+	done
 fi
 
 dockerCmd="docker run ${exported_vars} ${tty} ${gcp_vol} ${s3_vol} ${azure_vol} ${volume_mappings} --pid=host --network=host --rm --privileged ${platform} yugabytedb/yb-voyager yb-voyager ${argv[*]}"

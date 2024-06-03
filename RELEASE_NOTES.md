@@ -4,6 +4,81 @@
 
 Included here are the release notes for the [YugabyteDB Voyager](https://docs.yugabyte.com/preview/migrate/) v1 release series. Content will be added as new notable features and changes are available in the patch releases of the YugabyteDB v1 series.
 
+## v1.7.1 - May 28, 2024
+
+### Bug Fixes
+
+- Fixed a bug where `export data` command from Oracle source was failing with a "table already exists" error when stopped and re-run (i.e. resuming CDC phase of live migration).
+- Fixed a bug in the dockerised version of `yb-voyager` where commands `get data-migration-report` and `end migration` did not work if you had previously passed ssl-cert/ssl-key/ssl-root-cert in `export data/import data/import data to source replica` commands.
+
+## v1.7 - May 16, 2024
+
+### New features
+
+- [Assess Migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/assess-migration/) [[TECH PREVIEW](https://docs.yugabyte.com/preview/releases/versioning/#feature-availability)] (for PostgreSQL source only): Introduced the Voyager Migration Assessment feature specifically designed to optimize the database migration process from various source databases, currently supporting PostgreSQL to YugabyteDB. Voyager conducts a thorough analysis of the source database by capturing essential metadata and metrics, and generates a comprehensive assessment report.
+  - The report is created in HTML/JSON formats.
+  - When [export schema](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/schema-migration/export-schema/) is run, voyager automatically modifies the CREATE TABLE DDLs to incorporate the recommendations.
+  - Assessment can be done via plain bash/psql scripts for cases where source database connectivity is not available to the client machine running voyager.
+- Support for [live migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/) with the option to [fall-back](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-fall-back/) for PostgreSQL source databases.
+- Support for [live migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/) of partitioned tables and multiple schemas from PostgreSQL source databases.
+- Support for migration of case sensitive table/column names from PostgreSQL databases.
+  - As a result, the table-list flags in [import data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/import-data/)/[export data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/export-data/) can accept table names in any form (case sensitive/insensitive/quoted/unquoted).
+
+### Enhancements
+
+- Detect and skip (with user confirmation) the unsupported data types before starting live migration from PostgreSQL databases.
+- When migrating partitioned tables in PostgreSQL source databases, voyager can now import data via the root table name, making it possible to change the names or partitioning logic of the leaf tables.
+
+### Bug fixes
+
+- Workaround for a bug in YugabyteDB where batched queries in a transaction were internally retried partially without respecting transaction/atomicity semantics.
+- Fixed a bug in [export data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/export-data/) (from PostgreSQL source databases), where voyager was ignoring a partitioned table if only the root table name was specified in the `--table-list` argument.
+- Fixed an issue Voyager was not dropping and recreating invalid indexes in case of restarts of 'post-snapshot-import' flow of import-schema.
+- Fixed a bug in [analyze schema](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/schema-migration/analyze-schema/) that reports false-positive unsupported cases for "FETCH CURSOR".
+- Changed the [datatype mapping](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/datatype-mapping-oracle/) of `DATE:date` to `DATE:timestamp` in Oracle to avoid time data loss for such columns.
+- Increased maximum retry count of event batch to 50 for import data streaming.
+- Fixed a bug where schema analysis report has an incorrect value for invalid count of objects in summary.
+
+### Known issue
+
+- If you use dockerised version of yb-voyager, commands [get data-migration-report](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/import-data/#get-data-migration-report) and [end migration](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/end-migration/) do not work if you have previously passed ssl-cert/ssl-key/ssl-root-cert in [export data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/export-data/) or [import data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/import-data/) or [import data to source replica](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/import-data/#import-data-to-source-replica) commands.
+
+## v1.6.5 - February 13, 2024
+
+### New features
+
+- Support for [live migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/) from PostgreSQL databases with the option of [fall-forward](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-fall-forward/), using which you can switch to a source-replica PostgreSQL database if an issue arises during migration {{<badge/tp>}}.
+
+### Enhancements
+
+- The live migration workflow has been optimized for [Importing indexes and triggers](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/#import-indexes-and-triggers) on the target YugabyteDB. Instead of creating indexes on target after cutover, they can now be created concurrently with the CDC phase of `import-data-to-target`. This ensures that the time consuming task of creating indexes on the target YugabyteDB is completed before the cutover process.
+
+- The `--post-import-data` flag of import schema has been renamed to `--post-snapshot-import` to incorporate live migration workflows.
+
+- Enhanced [analyze schema](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/schema-migration/analyze-schema/) to report the unsupported extensions on YugabyteDB.
+
+- Improved UX of `yb-voyager get data-migration-report` for large set of tables by adding pagination.
+
+- The YugabyteDB debezium connector version is upgraded to v1.9.5.y.33.2 to leverage support for precise decimal type handling with YugabyteDB versions 2.20.1.1 and later.
+
+- Enhanced [export data status](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/export-data/#export-data-status) command to report number of rows exported for each table in case of offline migration.
+
+- Reduced default value of `--parallel-jobs` for import data to target YugabyteDB to 0.25 of total cores (from 0.5), to improve stability of target YugabyteDB.
+
+### Bug fixes
+
+- Fixed a bug in the CDC phase of [import data](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/data-migration/import-data/) where parallel ingestion of events with different primary keys having same unique keys was leading to unique constraint errors.
+
+- Fixed an issue in [yb-voyager initiate cutover to target](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/cutover-archive/cutover/#cutover-to-target) where fallback intent is stored even if you decide to abort the process in the confirmation prompt.
+
+- Fixed an issue in [yb-voyager end migration](https://docs.yugabyte.com/preview/yugabyte-voyager/reference/end-migration/) where the source database is not cleaned up if `--save-migration-reports` flag is set to false.
+
+- yb-voyager now gracefully shuts down all child processes on exit, to prevent orphan processes.
+
+- Fixed a bug in live migration where "\r\n" in text data was silently converted to "\n". This was affecting snapshot phase of live migration as well as offline migration with BETA_FAST_DATA_EXPORT.
+
+
+
 ## v1.6.1 - December 15, 2023
 ### Bug fixes
 
@@ -18,7 +93,7 @@ Included here are the release notes for the [YugabyteDB Voyager](https://docs.yu
 
 - Live migration
 
-  - Support for [live migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/) from Oracle databases (with the option of [fall-back](../migrate/live-fall-back/)) [[TECH PREVIEW](https://docs.yugabyte.com/preview/releases/versioning/#feature-availability)] , using which you can fall back to the original source database if an issue arises during live migration.
+  - Support for [live migration](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-migrate/) from Oracle databases (with the option of [fall-back](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-fall-back/)) [[TECH PREVIEW](https://docs.yugabyte.com/preview/releases/versioning/#feature-availability)] , using which you can fall back to the original source database if an issue arises during live migration.
 
   - Various commands that are used in live migration workflows (including [fall-forward](https://docs.yugabyte.com/preview/yugabyte-voyager/migrate/live-fall-forward/)) have been modified. Yugabyte is transitioning from the use of the term "fall-forward database" to the more preferred "source-replica database" terminology. The following table includes the list of modified commands.
 

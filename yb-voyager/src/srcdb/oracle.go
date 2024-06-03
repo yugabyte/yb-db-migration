@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -46,6 +47,8 @@ func newOracle(s *Source) *Oracle {
 
 func (ora *Oracle) Connect() error {
 	db, err := sql.Open("godror", ora.getConnectionUri())
+	db.SetMaxOpenConns(1)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	ora.db = db
 	return err
 }
@@ -127,12 +130,21 @@ func (ora *Oracle) GetAllTableNamesRaw(schemaName string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in querying source database for table names: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 	for rows.Next() {
 		var tableName string
 		err = rows.Scan(&tableName)
 		if err != nil {
 			return nil, fmt.Errorf("error in scanning query rows for table names: %v", err)
+		}
+		if strings.HasPrefix(tableName, "VOYAGER_LOG_MINING_FLUSH_") {
+			//Ignore this table as this is for debezium's internal use
+			continue
 		}
 		tableNames = append(tableNames, tableName)
 	}
@@ -212,7 +224,12 @@ func (ora *Oracle) GetIndexesInfo() []utils.IndexInfo {
 	if err != nil {
 		utils.ErrExit("error in querying source database for indexes info: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 	var indexesInfo []utils.IndexInfo
 	for rows.Next() {
 		var indexName, indexType, tableName, columns string
@@ -314,10 +331,8 @@ func (ora *Oracle) FilterUnsupportedTables(migrationUUID uuid.UUID, tableList []
 		}
 	}
 
-	logMiningFlushTable := utils.GetLogMiningFlushTableName(migrationUUID)
 	for _, table := range tableList {
-		_, tname := table.ForCatalogQuery()
-		if !slices.Contains(unsupportedTableList, table) && tname != logMiningFlushTable {
+		if !slices.Contains(unsupportedTableList, table) {
 			filteredTableList = append(filteredTableList, table)
 		}
 	}
@@ -409,6 +424,12 @@ func (ora *Oracle) GetColumnToSequenceMap(tableList []sqlname.NameTuple) map[str
 		if err != nil {
 			utils.ErrExit("failed to query %q for finding identity column: %v", query, err)
 		}
+		defer func() {
+			closeErr := rows.Close()
+			if closeErr != nil {
+				log.Warnf("close rows for table %s query %q: %v", table.String(), query, closeErr)
+			}
+		}()
 		for rows.Next() {
 			var columnName string
 			err := rows.Scan(&columnName)
@@ -417,6 +438,10 @@ func (ora *Oracle) GetColumnToSequenceMap(tableList []sqlname.NameTuple) map[str
 			}
 			qualifiedColumnName := fmt.Sprintf("%s.%s", table.AsQualifiedCatalogName(), columnName)
 			columnToSequenceMap[qualifiedColumnName] = fmt.Sprintf("%s_%s_seq", tname, columnName)
+		}
+		err = rows.Close()
+		if err != nil {
+			utils.ErrExit("close rows for table %s query %q: %s", table.String(), query, err)
 		}
 	}
 
@@ -540,7 +565,12 @@ func (ora *Oracle) GetTableToUniqueKeyColumnsMap(tableList []sqlname.NameTuple) 
 	if err != nil {
 		return nil, fmt.Errorf("querying unique key columns for tables: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 
 	for rows.Next() {
 		var tableName string
@@ -568,6 +598,7 @@ WHEN OTHERS THEN
 		RAISE;
 	END IF;
 END;`
+
 //(-942) exception is for table doesn't exists
 
 func (ora *Oracle) ClearMigrationState(migrationUUID uuid.UUID, exportDir string) error {
@@ -599,7 +630,12 @@ func (ora *Oracle) GetNonPKTables() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in querying source database for unsupported tables: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 	var nonPKTables []string
 	for rows.Next() {
 		var count int

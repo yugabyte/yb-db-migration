@@ -11,6 +11,7 @@ fi
 
 set -x
 
+export YB_VOYAGER_SEND_DIAGNOSTICS=false
 export TEST_NAME=$1
 
 export REPO_ROOT="${PWD}"
@@ -67,12 +68,15 @@ main() {
 		# Checking if the assessment reports were created
 		if [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.json" ]; then
 			echo "Assessment reports created successfully."
+			validate_failure_reasoning "${EXPORT_DIR}/assessment/reports/assessmentReport.json"
 			#TODO: Further validation to be added
 		else
 			echo "Error: Assessment reports were not created successfully."
 			cat_log_file "yb-voyager-assess-migration.log"
 			exit 1
 		fi
+
+		post_assess_migration
 	fi
 
 	step "Export schema."
@@ -166,11 +170,11 @@ main() {
 	step "Initiating cutover"
 	yb-voyager initiate cutover to target --export-dir ${EXPORT_DIR} --prepare-for-fall-back false --yes
 
-	for ((i = 0; i < 5; i++)); do
+	for ((i = 0; i < 10; i++)); do
     if [ "$(yb-voyager cutover status --export-dir "${EXPORT_DIR}" | grep "cutover to target status" | cut -d ':'  -f 2 | tr -d '[:blank:]')" != "COMPLETED" ]; then
         echo "Waiting for cutover to be COMPLETED..."
         sleep 20
-        if [ "$i" -eq 4 ]; then
+        if [ "$i" -eq 9 ]; then
             tail_log_file "yb-voyager-export-data.log"
             tail_log_file "yb-voyager-import-data.log"
 			tail_log_file "debezium-source_db_exporter.log"		

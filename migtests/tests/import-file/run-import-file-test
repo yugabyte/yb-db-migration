@@ -3,6 +3,7 @@
 set -e
 set -x
 
+export YB_VOYAGER_SEND_DIAGNOSTICS=false
 export TEST_NAME="import-file"
 
 export REPO_ROOT="${PWD}"

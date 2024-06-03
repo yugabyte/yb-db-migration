@@ -384,7 +384,7 @@ func displayImportedRowCountSnapshot(state *ImportDataState, tasks []*ImportFile
 			snapshotRowCount.Put(tableName, tableRowCount)
 		}
 	} else {
-		snapshotRowCount, err = getImportedSnapshotRowsMap(dbType, tableList)
+		snapshotRowCount, err = getImportedSnapshotRowsMap(dbType)
 		if err != nil {
 			utils.ErrExit("failed to get imported snapshot rows map: %v", err)
 		}
@@ -882,7 +882,7 @@ func getExportedSnapshotRowsMap(exportSnapshotStatus *ExportSnapshotStatus) (*ut
 	return snapshotRowsMap, snapshotStatusMap, nil
 }
 
-func getImportedSnapshotRowsMap(dbType string, tableList []sqlname.NameTuple) (*utils.StructMap[sqlname.NameTuple, int64], error) {
+func getImportedSnapshotRowsMap(dbType string) (*utils.StructMap[sqlname.NameTuple, int64], error) {
 	switch dbType {
 	case "target":
 		importerRole = TARGET_DB_IMPORTER_ROLE
@@ -974,4 +974,18 @@ func (ar *AssessmentReport) GetColocatedTablesRecommendation() ([]string, error)
 	}
 
 	return ar.Sizing.SizingRecommendation.ColocatedTables, nil
+}
+
+func (ar *AssessmentReport) GetClusterSizingRecommendation() string {
+	if ar.Sizing == nil {
+		return ""
+	}
+
+	if ar.Sizing.FailureReasoning != "" {
+		return ar.Sizing.FailureReasoning
+	}
+
+	return fmt.Sprintf("Num Nodes: %f, vCPU per instance: %d, Memory per instance: %d, Estimated Import Time: %f minutes",
+		ar.Sizing.SizingRecommendation.NumNodes, ar.Sizing.SizingRecommendation.VCPUsPerInstance,
+		ar.Sizing.SizingRecommendation.MemoryPerInstance, ar.Sizing.SizingRecommendation.EstimatedTimeInMinForImport)
 }

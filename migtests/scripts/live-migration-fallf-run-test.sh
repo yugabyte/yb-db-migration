@@ -11,6 +11,7 @@ fi
 
 set -x
 
+export YB_VOYAGER_SEND_DIAGNOSTICS=false
 export TEST_NAME=$1
 
 export REPO_ROOT="${PWD}"
@@ -76,12 +77,15 @@ main() {
 		# Checking if the assessment reports were created
 		if [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/assessmentReport.json" ]; then
 			echo "Assessment reports created successfully."
+			validate_failure_reasoning "${EXPORT_DIR}/assessment/reports/assessmentReport.json"
 			#TODO: Further validation to be added
 		else
 			echo "Error: Assessment reports were not created successfully."
 			cat_log_file "yb-voyager-assess-migration.log"
 			exit 1
 		fi
+
+		post_assess_migration
 	fi
 
 	step "Export schema."
@@ -200,13 +204,13 @@ main() {
 	step "Initiating cutover"
 	yb-voyager initiate cutover to target --export-dir ${EXPORT_DIR} --yes
 
-	# max sleep time = 15 * 20s = 5 minutes, but that much sleep will be in failure cases
+	# max sleep time = 20 * 20s = ~ 6.6 minutes, but that much sleep will be in failure cases
 	# in success case it will exit as soon as cutover is COMPLETED + 20sec
-	for ((i = 0; i < 15; i++)); do
+	for ((i = 0; i < 20; i++)); do
     if [ "$(yb-voyager cutover status --export-dir "${EXPORT_DIR}" | grep "cutover to target status" | cut -d ':'  -f 2 | tr -d '[:blank:]')"  != "COMPLETED" ]; then
         echo "Waiting for cutover to be COMPLETED..."
         sleep 20
-        if [ "$i" -eq 14 ]; then
+        if [ "$i" -eq 19 ]; then
             tail_log_file "yb-voyager-export-data.log"
             tail_log_file "yb-voyager-import-data.log"
 			tail_log_file "debezium-source_db_exporter.log"
@@ -230,11 +234,11 @@ main() {
 	step "Initiating cutover to source-replica"
 	yb-voyager initiate cutover to source-replica --export-dir ${EXPORT_DIR} --yes
 
-	for ((i = 0; i < 10; i++)); do
+	for ((i = 0; i < 15; i++)); do
     if [ "$(yb-voyager cutover status --export-dir "${EXPORT_DIR}" | grep "cutover to source-replica status" | cut -d ':'  -f 2 | tr -d '[:blank:]')" != "COMPLETED" ]; then
         echo "Waiting for switchover to be COMPLETED..."
         sleep 20
-        if [ "$i" -eq 9 ]; then
+        if [ "$i" -eq 14 ]; then
             tail_log_file "yb-voyager-import-data-to-source-replica.log"
             tail_log_file "yb-voyager-export-data-from-target.log"
 			tail_log_file "debezium-target_db_exporter_ff.log"
@@ -250,6 +254,15 @@ main() {
 
 	step "Run final validations."
 	"${TEST_DIR}/validateAfterChanges" --ff_enabled 'true' --fb_enabled 'false'
+
+	step "Run get data-migration-report"
+	get_data_migration_report
+
+	expected_file="${TEST_DIR}/data-migration-report-live-migration-fallf.json"
+	actual_file="${EXPORT_DIR}/reports/data-migration-report.json"
+
+	step "Verify data-migration-report report"
+	verify_report ${expected_file} ${actual_file}
 
 	step "End Migration: clearing metainfo about state of migration from everywhere."
 	end_migration --yes

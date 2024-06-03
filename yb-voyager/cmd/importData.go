@@ -1103,7 +1103,7 @@ func executeSqlStmtWithRetries(conn **pgx.Conn, sqlInfo sqlInfo, objType string)
 			continue
 		} else if missingRequiredSchemaObject(err) {
 			log.Infof("deffering execution of SQL: %s", sqlInfo.formattedStmt)
-			defferedSqlStmts = append(defferedSqlStmts, sqlInfo)
+			deferredSqlStmts = append(deferredSqlStmts, sqlInfo)
 		} else if isAlreadyExists(err.Error()) {
 			// pg_dump generates `CREATE SCHEMA public;` in the schemas.sql. Because the `public`
 			// schema already exists on the target YB db, the create schema statement fails with

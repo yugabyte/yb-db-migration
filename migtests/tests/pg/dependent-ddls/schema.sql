@@ -1,5 +1,5 @@
--- this test covers the cases when ddl are depenedent on each other and the order of execution during import schema might be wrong causing does not exist error
--- this has fixed as a part of enhancement in deffered list approach
+-- this test covers the cases when ddl are dependent on each other and the order of execution during import schema might be wrong causing does not exist error
+-- this has fixed as a part of enhancement in deferred list approach
 
 CREATE FUNCTION public.lower(text[]) RETURNS text[]
     LANGUAGE sql IMMUTABLE STRICT

@@ -528,7 +528,7 @@ func ReadTableNameListFromFile(filePath string) ([]string, error) {
 func GetLogMiningFlushTableName(migrationUUID uuid.UUID) string {
 	// SQL tables doesn't support '-' in the name
 	convertedMigUUID := strings.Replace(migrationUUID.String(), "-", "_", -1)
-	return fmt.Sprintf("VOYAGER_LOG_MINING_FLUSH_%s", convertedMigUUID)
+	return fmt.Sprintf("VOYAGER_LOG_MINING_FLUSH_%s", strings.ToUpper(convertedMigUUID))
 }
 
 func ConvertStringSliceToInterface(slice []string) []interface{} {

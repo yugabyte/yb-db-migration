@@ -10,3 +10,8 @@ sed -i  's/p2\.sydney/p2.sydney_region/g' $TEST_DIR/export-dir/schema/tables/tab
 sed -i  's/p2\.boston/p2.boston_region/g' $TEST_DIR/export-dir/schema/tables/INDEXES_table.sql
 sed -i  's/p2\.london/p2.london_region/g' $TEST_DIR/export-dir/schema/tables/INDEXES_table.sql
 sed -i  's/p2\.sydney/p2.sydney_region/g' $TEST_DIR/export-dir/schema/tables/INDEXES_table.sql
+
+# Added so that the validations work(to check the recommendations in target YB applied or not)
+sed -i  's/p2\.boston/p2.boston_region/g' $TEST_DIR/export-dir/assessment/reports/assessmentReport.json
+sed -i  's/p2\.london/p2.london_region/g' $TEST_DIR/export-dir/assessment/reports/assessmentReport.json
+sed -i  's/p2\.sydney/p2.sydney_region/g' $TEST_DIR/export-dir/assessment/reports/assessmentReport.json

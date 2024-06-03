@@ -815,11 +815,6 @@ func clearMigrationStateIfRequired() {
 		if err != nil {
 			utils.ErrExit("Failed to truncate tables in metadb: %s", err)
 		}
-		//For dropping VOYAGER_LOG_MINING_FLUSH_{migrationUUID} table in oracle on start-clean
-		err = source.DB().ClearMigrationState(migrationUUID, exportDir)
-		if err != nil {
-			utils.ErrExit("failed to clear migration state: %s", err)
-		}
 	} else {
 		if !utils.IsDirectoryEmpty(exportDataDir) {
 			if (changeStreamingIsEnabled(exportType)) &&

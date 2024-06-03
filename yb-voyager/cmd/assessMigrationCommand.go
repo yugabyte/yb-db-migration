@@ -45,7 +45,21 @@ var (
 	assessmentMetadataDirFlag string
 	assessmentReport          AssessmentReport
 	assessmentDB              *migassessment.AssessmentDB
+	intervalForCapturingIOPS  int64
 )
+var sourceConnectionFlags = []string{
+	"source-db-host",
+	"source-db-password",
+	"source-db-name",
+	"source-db-port",
+	"source-db-schema",
+	"source-db-user",
+	"source-ssl-cert",
+	"source-ssl-crl",
+	"source-ssl-key",
+	"source-ssl-mode",
+	"source-ssl-root-cert",
+}
 
 type UnsupportedFeature struct {
 	FeatureName string   `json:"FeatureName"`
@@ -63,7 +77,19 @@ var assessMigrationCmd = &cobra.Command{
 		validateSourceSchema()
 		validatePortRange()
 		validateSSLMode()
-		validateAssessmentMetadataDirFlag()
+		if cmd.Flags().Changed("assessment-metadata-dir") {
+			validateAssessmentMetadataDirFlag()
+			for _, f := range sourceConnectionFlags {
+				if cmd.Flags().Changed(f) {
+					utils.ErrExit("Cannot pass `--source-*` connection related flags when `--assessment-metadata-dir` is provided.\nPlease re-run the command without these flags")
+				}
+			}
+		} else {
+			cmd.MarkFlagRequired("source-db-user")
+			cmd.MarkFlagRequired("source-db-name")
+			//Update this later as per db-types TODO
+			cmd.MarkFlagRequired("source-db-schema")
+		}
 	},
 
 	Run: func(cmd *cobra.Command, args []string) {
@@ -77,6 +103,8 @@ var assessMigrationCmd = &cobra.Command{
 func registerSourceDBConnFlagsForAM(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&source.DBType, "source-db-type", "",
 		"source database type: (postgresql)\n")
+
+	cmd.MarkFlagRequired("source-db-type")
 
 	cmd.Flags().StringVar(&source.Host, "source-db-host", "localhost",
 		"source database server host")
@@ -127,6 +155,10 @@ func init() {
 	assessMigrationCmd.Flags().StringVar(&assessmentMetadataDirFlag, "assessment-metadata-dir", "",
 		"Directory path where assessment metadata like source DB metadata and statistics are stored. Optional flag, if not provided, "+
 			"it will be assumed to be present at default path inside the export directory.")
+
+	assessMigrationCmd.Flags().Int64Var(&intervalForCapturingIOPS, "iops-capture-interval", 120,
+		"Interval (in seconds) at which voyager will gather IOPS metadata from source database for the given schema(s).")
+
 }
 
 func assessMigration() (err error) {
@@ -166,7 +198,6 @@ func assessMigration() (err error) {
 	if err != nil {
 		utils.PrintAndLog("failed to run assessment: %v", err)
 	}
-	assessmentReport.Sizing = migassessment.SizingReport
 
 	err = generateAssessmentReport()
 	if err != nil {
@@ -201,6 +232,18 @@ func IsMigrationAssessmentDone() (bool, error) {
 	return record.MigrationAssessmentDone, nil
 }
 
+func ClearMigrationAssessmentDone() error {
+	err := metaDB.UpdateMigrationStatusRecord(func(record *metadb.MigrationStatusRecord) {
+		if record.MigrationAssessmentDone {
+			record.MigrationAssessmentDone = false
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("failed to clear migration status record with migration assessment done flag: %w", err)
+	}
+	return nil
+}
+
 func createMigrationAssessmentStartedEvent() *cp.MigrationAssessmentStartedEvent {
 	ev := &cp.MigrationAssessmentStartedEvent{}
 	initBaseSourceEvent(&ev.BaseEvent, "ASSESS MIGRATION")
@@ -228,6 +271,13 @@ func runAssessment(assessmentDir string) error {
 		return fmt.Errorf("failed to perform sizing and sharding assessment: %w", err)
 	}
 
+	assessmentReport.Sizing = migassessment.SizingReport
+
+	shardedTables, _ := assessmentReport.GetShardedTablesRecommendation()
+	colocatedTables, _ := assessmentReport.GetColocatedTablesRecommendation()
+	log.Infof("Recommendation: colocated tables: %v", colocatedTables)
+	log.Infof("Recommendation: sharded tables: %v", shardedTables)
+	log.Infof("Recommendation: Cluster size: %s", assessmentReport.GetClusterSizingRecommendation())
 	return nil
 }
 
@@ -249,6 +299,10 @@ func checkStartCleanForAssessMigration(metadataDirPassedByUser bool) {
 			utils.CleanDir(filepath.Join(assessmentDir, "metadata"))
 			utils.CleanDir(filepath.Join(assessmentDir, "reports"))
 			utils.CleanDir(filepath.Join(assessmentDir, "dbs"))
+			err := ClearMigrationAssessmentDone()
+			if err != nil {
+				utils.ErrExit("failed to start clean: %v", err)
+			}
 		} else {
 			utils.ErrExit("assessment metadata or reports files already exist in the assessment directory at '%s'. Use the --start-clean flag to clear the directory before proceeding.", assessmentDir)
 		}
@@ -316,6 +370,7 @@ func gatherAssessmentMetadataFromPG() (err error) {
 		source.DB().GetConnectionUriWithoutPassword(),
 		source.Schema,
 		assessmentMetadataDir,
+		fmt.Sprintf("%d", intervalForCapturingIOPS),
 	}
 
 	cmd := exec.Command(scriptPath, scriptArgs...)
@@ -568,7 +623,10 @@ func generateAssessmentReportHtml(reportDir string) error {
 	}()
 
 	log.Infof("creating template for assessment report...")
-	tmpl := template.Must(template.New("report").Parse(string(bytesTemplate)))
+	funcMap := template.FuncMap{
+		"split": split,
+	}
+	tmpl := template.Must(template.New("report").Funcs(funcMap).Parse(string(bytesTemplate)))
 
 	log.Infof("execute template for assessment report...")
 	err = tmpl.Execute(file, assessmentReport)
@@ -578,6 +636,10 @@ func generateAssessmentReportHtml(reportDir string) error {
 
 	utils.PrintAndLog("generated HTML assessment report at: %s", htmlReportFilePath)
 	return nil
+}
+
+func split(value string, delimiter string) []string {
+	return strings.Split(value, delimiter)
 }
 
 func validateSourceDBTypeForAssessMigration() {

@@ -664,6 +664,7 @@ assess_migration() {
 		--source-db-name ${SOURCE_DB_NAME}
 		--send-diagnostics=false --yes
 		--start-clean t
+		--iops-capture-interval 0
 	"
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
 	then
@@ -692,4 +693,79 @@ assess_migration() {
 	yb-voyager assess-migration ${args} $*
 }
 
+validate_failure_reasoning() {
+    assessment_report="$1"
 
+    # Check if FailureReasoning is empty or not
+    failure_reasoning=$(jq -r '.Sizing.FailureReasoning' "$assessment_report")
+    if [ -z "$failure_reasoning" ]; then
+        echo "FailureReasoning is empty. Assessment passed."
+    else
+        echo "Error: FailureReasoning is not empty. Assessment failed."
+        echo "FailureReasoning: $failure_reasoning"
+        cat_log_file "yb-voyager-assess-migration.log"
+        exit 1
+    fi
+}
+
+post_assess_migration() {
+    json_file="$EXPORT_DIR/assessment/reports/assessmentReport.json"
+    sharded_tables=$(fetch_sharded_tables "$json_file")
+    echo "Sharded Tables: $sharded_tables"
+    colocated_tables=$(fetch_colocated_tables "$json_file")
+    echo "Colocated Tables: $colocated_tables"
+
+    move_tables "$json_file" 30
+
+    updated_sharded_tables=$(fetch_sharded_tables "$json_file")
+    echo "Updated Sharded Tables: $updated_sharded_tables"
+    updated_colocated_tables=$(fetch_colocated_tables "$json_file")
+    echo "Updated Colocated Tables: $updated_colocated_tables"
+}
+
+fetch_sharded_tables() {
+    local json_file=$1
+    jq '.Sizing.SizingRecommendation.ShardedTables // []' "$json_file"
+}
+
+fetch_colocated_tables() {
+    local json_file=$1
+    jq '.Sizing.SizingRecommendation.ColocatedTables // []' "$json_file"
+}
+
+# Function to move a specified percentage of tables from colocated to sharded
+move_tables() {
+    local json_file=$1
+    local percentage=$2
+
+    local total_tables=$(jq '[.Sizing.SizingRecommendation.ShardedTables // [], .Sizing.SizingRecommendation.ColocatedTables // []] | flatten | length' "$json_file")
+    local sharded_tables_count=$(jq '.Sizing.SizingRecommendation.ShardedTables | length // 0' "$json_file")
+    local target_sharded_tables=$((total_tables * percentage / 100))
+
+    if [ "$sharded_tables_count" -ge "$target_sharded_tables" ]; then
+        echo "Sharded tables are already 30% or more of the total tables. No need to move tables."
+        return
+    fi
+
+    local tables_to_move=$((target_sharded_tables - sharded_tables_count))
+
+    if [ "$tables_to_move" -le 0 ]; then
+        echo "No tables need to be moved."
+        return
+    fi
+
+    echo "Moving $tables_to_move tables from colocated to sharded."
+
+    colocated_tables=$(fetch_colocated_tables "$json_file")
+    # Select random tables to move
+    new_sharded_tables=$(echo "$colocated_tables" | jq --argjson count "$tables_to_move" 'to_entries | .[:$count] | map(.value) | flatten')
+    remaining_colocated_tables=$(echo "$colocated_tables" | jq --argjson new_sharded "$new_sharded_tables" '. - $new_sharded')
+
+    # Convert arrays to JSON
+    new_sharded_tables_json=$(echo "$new_sharded_tables" | jq -s 'flatten')
+    remaining_colocated_tables_json=$(echo "$remaining_colocated_tables" | jq -s 'flatten')
+
+    # Update the JSON file with the new lists of sharded and colocated tables
+    jq --indent 4 --argjson new_sharded_tables "$new_sharded_tables_json" --argjson remaining_colocated_tables "$remaining_colocated_tables_json" \
+       '.Sizing.SizingRecommendation.ShardedTables += $new_sharded_tables | .Sizing.SizingRecommendation.ColocatedTables = $remaining_colocated_tables' "$json_file" > tmp.json && mv tmp.json "$json_file"
+}

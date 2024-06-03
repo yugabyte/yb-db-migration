@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
@@ -46,6 +47,8 @@ func newMySQL(s *Source) *MySQL {
 
 func (ms *MySQL) Connect() error {
 	db, err := sql.Open("mysql", ms.getConnectionUri())
+	db.SetMaxOpenConns(1)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	ms.db = db
 	return err
 }
@@ -117,7 +120,12 @@ func (ms *MySQL) GetAllTableNamesRaw(schemaName string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in querying source database for table names: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 	for rows.Next() {
 		var tableName string
 		err = rows.Scan(&tableName)
@@ -284,7 +292,7 @@ func (ms *MySQL) GetAllSequencesRaw(schemaName string) ([]string, error) {
 
 	query := fmt.Sprintf(`SELECT table_name, column_name FROM information_schema.columns
 		WHERE table_schema = '%s' AND extra = 'auto_increment'`,
-			schemaName)
+		schemaName)
 	log.Infof("Querying '%s' for auto increment column of all tables in the database %q", query, schemaName)
 	var sequences []string
 	rows, err := ms.db.Query(query)
@@ -366,6 +374,12 @@ func (ms *MySQL) GetColumnToSequenceMap(tableList []sqlname.NameTuple) map[strin
 		if err != nil {
 			utils.ErrExit("Failed to query %q for auto increment column of %q: %s", query, table.String(), err)
 		}
+		defer func() {
+			closeErr := rows.Close()
+			if closeErr != nil {
+				log.Warnf("close rows for table %s query %q: %v", table.String(), query, closeErr)
+			}
+		}()
 		if rows.Next() {
 			err = rows.Scan(&columnName)
 			if err != nil {
@@ -375,6 +389,10 @@ func (ms *MySQL) GetColumnToSequenceMap(tableList []sqlname.NameTuple) map[strin
 			// sequence name as per PG naming convention for bigserial datatype's sequence
 			sequenceName := fmt.Sprintf("%s_%s_seq", tname, columnName)
 			columnToSequenceMap[qualifiedColumeName] = sequenceName
+		}
+		err = rows.Close()
+		if err != nil {
+			utils.ErrExit("close rows for table %s query %q: %s", table.String(), query, err)
 		}
 	}
 	return columnToSequenceMap
@@ -463,7 +481,12 @@ func (ms *MySQL) GetNonPKTables() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query %q for primary key of %q: %w", query, ms.source.DBName, err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
 	var nonPKTables []string
 	for rows.Next() {
 		var count int

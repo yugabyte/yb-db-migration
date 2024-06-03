@@ -30,6 +30,7 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+            vertical-align: top; /* Vertically center content in table cells */
         }
         th {
             background-color: #f2f2f2;
@@ -41,12 +42,11 @@
         li {
             margin: 5px 0;
         }
-        .table-container {
-            display: flex;
-            justify-content: space-between;
-        }
-        .table-container > div {
-            width: 48%;
+        .scrollable-div {
+            max-height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
         }
     </style>
 </head>
@@ -55,7 +55,11 @@
         <h1>Migration Assessment Report</h1>
         <h2>Schema Summary</h2>
         <p><strong>Database Name:</strong> {{.SchemaSummary.DBName}}</p>
-        <p><strong>Schema Name:</strong> {{.SchemaSummary.SchemaName}}</p>
+        <p><strong>Schema Name(s):</strong> 
+       {{range $i, $a := .SchemaSummary.SchemaNames}}
+            {{$a}}&nbsp;
+        {{end}}
+        <p>
         {{with .SchemaSummary.DBVersion}}
         <p><strong>Database Version:</strong> {{.}}</p>
         {{end}}
@@ -71,39 +75,18 @@
             <tr>
                 <td>{{.ObjectType}}</td>
                 <td>{{.TotalCount}}</td>
-                <td>{{.ObjectNames}}</td>
+                <td>
+                    <div class="scrollable-div">
+                        {{range split .ObjectNames ","}}
+                            {{.}}<br>
+                        {{end}}
+                    </div>
+                </td>
             </tr>
             {{end}}
         </table>
 
-        <h2>Unsupported Data Types</h2>
-        <table>
-            <tr>
-                <th>Schema</th>
-                <th>Table</th>
-                <th>Column</th>
-                <th>Data Type</th>
-            </tr>
-            {{range .UnsupportedDataTypes}}
-            <tr>
-                <td>{{.SchemaName}}</td>
-                <td>{{.TableName}}</td>
-                <td>{{.ColumnName}}</td>
-                <td>{{.DataType}}</td>
-            </tr>
-            {{end}}
-        </table>
-
-        <h2>Unsupported Features</h2>
-        {{range .UnsupportedFeatures}}
-        <h3>{{.FeatureName}}</h3>
-        <ul>
-            {{range .ObjectNames}}
-            <li>{{.}}</li>
-            {{end}}
-        </ul>
-        {{end}}
-            {{with .Sizing}}
+        {{with .Sizing}}
             <h2>Sharding Recommendations</h2>
                 {{ if eq .FailureReasoning "" }}
                     {{ with .SizingRecommendation }}
@@ -113,8 +96,20 @@
                                 <th>Sharded Tables</th>
                             </tr>
                             <tr>
-                                <td>{{range .ColocatedTables}}{{.}}<br>{{end}}</td>
-                                <td>{{range .ShardedTables}}{{.}}<br>{{end}}</td>
+                                <td>
+                                    <div class="scrollable-div">
+                                        {{range .ColocatedTables}}
+                                            {{.}}<br>
+                                        {{end}}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="scrollable-div">
+                                        {{range .ShardedTables}}
+                                            {{.}}<br>
+                                        {{end}}
+                                    </div>
+                                </td>
                             </tr>
                         </table>
                     <h2>Sizing Recommendations</h2>
@@ -136,9 +131,51 @@
                 {{ end }}
                 {{else}}
                     <p>Could not perform sizing assessment:  {{ .FailureReasoning }}</p>
-                {{ end }}
+            {{ end }}
+        {{end}}
 
+        <h2>Unsupported Data Types</h2>
+        {{ if .UnsupportedDataTypes }}
+            <div class="scrollable-div">
+                <table>
+                    <tr>
+                        <th>Schema</th>
+                        <th>Table</th>
+                        <th>Column</th>
+                        <th>Data Type</th>
+                    </tr>
+                    {{range .UnsupportedDataTypes}}
+                    <tr>
+                        <td>{{.SchemaName}}</td>
+                        <td>{{.TableName}}</td>
+                        <td>{{.ColumnName}}</td>
+                        <td>{{.DataType}}</td>
+                    </tr>
+                    {{end}}
+                </table>
+            </div>
+        {{ else }}
+            <p>No unsupported data types detected in the assessed schemas.</p>
+        {{ end }}
+
+        <h2>Unsupported Features</h2>
+        {{ $hasUnsupportedFeatures := false }}
+        {{range .UnsupportedFeatures}}
+            {{if .ObjectNames}} <!-- Check if ObjectNames is not empty -->
+                {{ $hasUnsupportedFeatures = true }}
+                <h3>{{.FeatureName}}</h3>
+                <ul>
+                    <div class="scrollable-div">
+                        {{range .ObjectNames}}
+                            <li>{{.}}</li>
+                        {{end}}
+                    </div>
+                </ul>
             {{end}}
+        {{end}}
+        {{if not $hasUnsupportedFeatures}} <!-- Check if no unsupported features were found -->
+            <p>No unsupported features among detected among the ones assessed.</p>
+        {{end}}
     </div>
 </body>
 </html>

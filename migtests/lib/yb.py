@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from collections import Counter
 from xmlrpc.client import boolean
 import psycopg2
+import json
 
 
 def run_checks(checkFn, db_type="yb"):
@@ -48,6 +49,37 @@ def new_source_db():
 		env.get("SOURCE_DB_USER", "postgres"),
 		env.get("SOURCE_DB_PASSWORD", "secret"),
 		env["SOURCE_DB_NAME"])
+
+def verify_colocation(tgt):
+	print("Verifying the colocation of the tables")
+	json_file = "export-dir/assessment/reports/assessmentReport.json"
+
+	sharded_tables, colocated_tables = fetch_sharded_and_colocated_tables(json_file)
+
+	print("Sharded Tables: ", sharded_tables)
+	print("Colocated Tables: ", colocated_tables)
+
+	for table in sharded_tables:
+		schema_name, table_name = table.split(".")
+		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
+		assert not actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: False, Actual: {actual_colocation}"
+
+	for table in colocated_tables:
+		schema_name, table_name = table.split(".")
+		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
+		assert actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: True, Actual: {actual_colocation}"
+
+def fetch_sharded_and_colocated_tables(json_file):
+	with open(json_file, 'r') as file:
+		data = json.load(file)
+	sharded_tables = data['Sizing']['SizingRecommendation']['ShardedTables']
+	colocated_tables = data['Sizing']['SizingRecommendation']['ColocatedTables']
+
+	if sharded_tables is None:
+		sharded_tables = []
+	if colocated_tables is None:
+		colocated_tables = []
+	return sharded_tables, colocated_tables
 
 class PostgresDB:
 	  
