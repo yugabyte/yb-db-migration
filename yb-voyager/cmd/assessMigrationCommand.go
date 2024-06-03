@@ -176,10 +176,10 @@ func assessMigration() (err error) {
 	utils.PrintAndLog("Migration assessment completed successfully.")
 	completedEvent := createMigrationAssessmentCompletedEvent()
 	controlPlane.MigrationAssessmentCompleted(completedEvent)
-	err = SetMigrationAssessmentDoneInMSR()
+	/*err = SetMigrationAssessmentDoneInMSR()
 	if err != nil {
 		return fmt.Errorf("failed to set migration assessment completed in MSR: %w", err)
-	}
+	}*/
 	return nil
 }
 
