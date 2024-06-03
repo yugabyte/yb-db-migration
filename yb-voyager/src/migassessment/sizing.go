@@ -334,9 +334,8 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 			for _, table := range rec.ShardedTables {
 				// check and fetch indexes size data for table
 				_, indexesSizeSum, _, _ := checkAndFetchIndexes(table, sourceIndexMetadata)
-				threshold, tabletsRequired := getThresholdAndTablets(table.Size + indexesSizeSum)
+				_, tabletsRequired := getThresholdAndTablets(table.Size + indexesSizeSum)
 				totalTabletsRequired += tabletsRequired
-				fmt.Printf("\tTable %s with size %f GB requires %d tablets from threshold %0.4f\n", table.ObjectName, table.Size+indexesSizeSum, tabletsRequired, threshold)
 			}
 			// assuming table limits is also a tablet limit
 			// get shardedLimit of current recommendation
