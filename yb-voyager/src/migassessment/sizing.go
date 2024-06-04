@@ -347,9 +347,16 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 					nodesRequired := math.Ceil(float64(totalTabletsRequired*3) / float64(record.maxSupportedNumTables.Int64))
 					// update recommendation to use the maximum of the existing recommended nodes and nodes calculated based on tablets
 					if nodesRequired > rec.NumNodes {
-						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets required: Tablets required %d, existing recommendation: %f new recommendation: %f\n", totalTabletsRequired, rec.NumNodes, nodesRequired)
+						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets "+
+							"required: Tablets required %d. Instance with %f vCPU can support %d tablets/node. "+
+							"Existing recommended nodes: %d new recommended nodes: %d\n", totalTabletsRequired,
+							record.numCores.Float64, record.maxSupportedNumTables.Int64, int(rec.NumNodes), int(nodesRequired))
 					} else {
-						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets required: Tablets required %d, existing recommendation: %f. Staying with current recommendation\n", totalTabletsRequired, rec.NumNodes)
+						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets "+
+							"required: Tablets required %d, existing recommendation: %f. "+
+							"Instance with %f vCPU can support %d tablets/node. "+
+							"Staying with current recommendation\n", totalTabletsRequired, rec.NumNodes,
+							record.numCores.Float64, record.maxSupportedNumTables.Int64)
 					}
 					rec.NumNodes = math.Max(rec.NumNodes, nodesRequired)
 					recommendation[index] = rec
