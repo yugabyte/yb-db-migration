@@ -83,6 +83,7 @@ type IntermediateRecommendation struct {
 	EstimatedTimeInMinForImport     float64
 	ParallelVoyagerJobs             float64
 	FailureReasoning                string
+	HorizontalScaleReasoning        string
 }
 
 const (
@@ -345,6 +346,11 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 					// considering RF=3, hence total required tablets would be 3 times the totalTabletsRequired
 					nodesRequired := math.Ceil(float64(totalTabletsRequired*3) / float64(record.maxSupportedNumTables.Int64))
 					// update recommendation to use the maximum of the existing recommended nodes and nodes calculated based on tablets
+					if nodesRequired > rec.NumNodes {
+						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets required: Tablets required %d, existing recommendation: %f new recommendation: %f\n", totalTabletsRequired, rec.NumNodes, nodesRequired)
+					} else {
+						rec.HorizontalScaleReasoning = fmt.Sprintf(" Horizontal Scaling based on tablets required: Tablets required %d, existing recommendation: %f. Staying with current recommendation\n", totalTabletsRequired, rec.NumNodes)
+					}
 					rec.NumNodes = math.Max(rec.NumNodes, nodesRequired)
 					recommendation[index] = rec
 				}
@@ -996,7 +1002,7 @@ func getReasoning(recommendation IntermediateRecommendation, shardedObjects []So
 		}
 
 	}
-	return reasoning
+	return reasoning + recommendation.HorizontalScaleReasoning
 }
 
 /*
