@@ -327,7 +327,7 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 	shardedLimits []ExpDataShardedLimit,
 	recommendation map[int]IntermediateRecommendation) map[int]IntermediateRecommendation {
 	// Iterate over each intermediate recommendation where failureReasoning is empty
-	for index, rec := range recommendation {
+	for i, rec := range recommendation {
 		totalTabletsRequired := 0
 		if len(rec.ShardedTables) != 0 && rec.FailureReasoning == "" {
 			// Iterate over each table and its indexes to find out how many tablets are needed
@@ -364,7 +364,7 @@ func findNumNodesNeededBasedOnTabletsRequired(sourceIndexMetadata []SourceDBMeta
 							record.numCores.Float64, record.maxSupportedNumTables.Int64)
 					}
 					rec.NumNodes = math.Max(rec.NumNodes, nodesRequired)
-					recommendation[index] = rec
+					recommendation[i] = rec
 				}
 			}
 		}
