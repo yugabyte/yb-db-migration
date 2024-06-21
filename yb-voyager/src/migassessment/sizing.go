@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"github.com/samber/lo"
 	"io"
 	"math"
 	"net/http"
@@ -36,10 +37,10 @@ type SourceDBMetadata struct {
 	ObjectName      string         `db:"object_name"`
 	RowCount        sql.NullInt64  `db:"row_count,string"`
 	ColumnCount     sql.NullInt64  `db:"column_count,string"`
-	Reads           int64          `db:"reads,string"`
-	Writes          int64          `db:"writes,string"`
-	ReadsPerSec     int64          `db:"reads_per_second,string"`
-	WritesPerSec    int64          `db:"writes_per_second,string"`
+	Reads           sql.NullInt64  `db:"reads,string"`
+	Writes          sql.NullInt64  `db:"writes,string"`
+	ReadsPerSec     sql.NullInt64  `db:"reads_per_second,string"`
+	WritesPerSec    sql.NullInt64  `db:"writes_per_second,string"`
 	IsIndex         bool           `db:"is_index,string"`
 	ParentTableName sql.NullString `db:"parent_table_name"`
 	Size            float64        `db:"size_in_bytes,string"`
@@ -300,8 +301,8 @@ func findNumNodesNeededBasedOnThroughputRequirement(sourceIndexMetadata []Source
 		for _, table := range previousRecommendation.ShardedTables {
 			// Check and fetch indexes for the current table
 			_, _, indexReads, indexWrites := checkAndFetchIndexes(table, sourceIndexMetadata)
-			cumulativeSelectOpsPerSec += table.ReadsPerSec + indexReads
-			cumulativeInsertOpsPerSec += table.WritesPerSec + indexWrites
+			cumulativeSelectOpsPerSec += lo.Ternary(table.ReadsPerSec.Valid, table.ReadsPerSec.Int64, 0) + indexReads
+			cumulativeInsertOpsPerSec += lo.Ternary(table.WritesPerSec.Valid, table.WritesPerSec.Int64, 0) + indexWrites
 		}
 
 		// Calculate needed cores based on cumulative operations per second
@@ -541,8 +542,8 @@ func shardingBasedOnOperations(sourceIndexMetadata []SourceDBMetadata,
 			_, indexesSizeSum, indexReads, indexWrites := checkAndFetchIndexes(table, sourceIndexMetadata)
 
 			// Calculate new operations per second
-			newSelectOpsPerSec := cumulativeSelectOpsPerSec + table.ReadsPerSec + indexReads
-			newInsertOpsPerSec := cumulativeInsertOpsPerSec + table.WritesPerSec + indexWrites
+			newSelectOpsPerSec := cumulativeSelectOpsPerSec + lo.Ternary(table.ReadsPerSec.Valid, table.ReadsPerSec.Int64, 0) + indexReads
+			newInsertOpsPerSec := cumulativeInsertOpsPerSec + lo.Ternary(table.WritesPerSec.Valid, table.WritesPerSec.Int64, 0) + indexWrites
 
 			// Calculate total object size
 			objectTotalSize := table.Size + indexesSizeSum
@@ -1135,8 +1136,8 @@ func checkAndFetchIndexes(table SourceDBMetadata, indexes []SourceDBMetadata) ([
 		if index.ParentTableName.Valid && (index.ParentTableName.String == (table.SchemaName + "." + table.ObjectName)) {
 			indexesOfTable = append(indexesOfTable, index)
 			indexesSizeSum += index.Size
-			cumulativeSelectOpsPerSecIdx += index.ReadsPerSec
-			cumulativeInsertOpsPerSecIdx += index.WritesPerSec
+			cumulativeSelectOpsPerSecIdx += lo.Ternary(index.ReadsPerSec.Valid, index.ReadsPerSec.Int64, 0)
+			cumulativeInsertOpsPerSecIdx += lo.Ternary(index.ReadsPerSec.Valid, index.ReadsPerSec.Int64, 0)
 		}
 	}
 
@@ -1208,8 +1209,8 @@ func getObjectsSize(objects []SourceDBMetadata) (float64, int64, int64, string) 
 	for _, object := range objects {
 		// Accumulate size and throughput values
 		objectsSize += object.Size
-		objectSelectOps += object.ReadsPerSec
-		objectInsertOps += object.WritesPerSec
+		objectSelectOps += lo.Ternary(object.ReadsPerSec.Valid, object.ReadsPerSec.Int64, 0)
+		objectInsertOps += lo.Ternary(object.WritesPerSec.Valid, object.WritesPerSec.Int64, 0)
 	}
 	// if object size is less than 1 GB, convert it to MB
 	if objectsSize < 1 {
