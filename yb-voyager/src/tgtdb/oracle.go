@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/sqlldr"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils/sqlname"
@@ -160,6 +161,13 @@ func (tdb *TargetOracleDB) GetVersion() string {
 		utils.ErrExit("run query %q on source: %s", query, err)
 	}
 	return version
+}
+
+func (tdb *TargetOracleDB) GetCallhomeTargetDBInfo() *callhome.TargetDBDetails {
+	return &callhome.TargetDBDetails{
+		DBVersion: tdb.GetVersion(),
+		Host:      tdb.tconf.Host,
+	}
 }
 
 func (tdb *TargetOracleDB) CreateVoyagerSchema() error {
@@ -662,10 +670,6 @@ func (tdb *TargetOracleDB) isQueryResultNonEmpty(query string) bool {
 	defer rows.Close()
 
 	return rows.Next()
-}
-
-func (tdb *TargetOracleDB) InvalidIndexes() (map[string]bool, error) {
-	return nil, nil
 }
 
 // this will be only called by FallForward or FallBack DBs

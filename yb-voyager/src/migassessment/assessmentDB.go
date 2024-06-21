@@ -152,7 +152,7 @@ type AssessmentDB struct {
 	db *sql.DB
 }
 
-func NewAssessmentDB() (*AssessmentDB, error) {
+func NewAssessmentDB(sourceDBType string) (*AssessmentDB, error) {
 	db, err := sql.Open("sqlite3", fmt.Sprintf("%s%s", GetSourceMetadataDBFilePath(), metadb.SQLITE_OPTIONS))
 	if err != nil {
 		return nil, fmt.Errorf("error opening assessment db %s: %w", GetSourceMetadataDBFilePath(), err)
@@ -162,6 +162,9 @@ func NewAssessmentDB() (*AssessmentDB, error) {
 }
 
 func (adb *AssessmentDB) BulkInsert(table string, records [][]string) error {
+	if len(records) == 0 {
+		return nil
+	}
 	ctx := context.Background()
 	tx, err := adb.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -201,18 +204,20 @@ func (adb *AssessmentDB) BulkInsert(table string, records [][]string) error {
 }
 
 const (
-	InsertTableStats = `INSERT INTO %s (schema_name, object_name, row_count, column_count, reads, writes, is_index, object_type, parent_table_name, size_in_bytes)
+	InsertTableStats = `INSERT INTO %s (schema_name, object_name, row_count, column_count, reads, writes, reads_per_second, writes_per_second, is_index, object_type, parent_table_name, size_in_bytes)
 	SELECT 
 		trc.schema_name,
 		trc.table_name AS object_name,
 		trc.row_count,
 		tcc.column_count,
-		tii.seq_reads AS reads,
-		tii.row_writes AS writes,
+		COALESCE(tii.seq_reads, 0) AS reads,
+		COALESCE(tii.row_writes, 0) AS writes,
+		0 AS reads_per_second,
+		0 as writes_per_second,
 		0 AS is_index,
 		otm.object_type,
 		NULL AS parent_table_name,
-		tis.size_in_bytes
+		COALESCE(tis.size_in_bytes, 0)
 	FROM %s trc
 	LEFT JOIN %s tii ON trc.schema_name = tii.schema_name AND trc.table_name = tii.object_name and tii.measurement_type='initial'
 	LEFT JOIN %s tis ON trc.schema_name = tis.schema_name AND trc.table_name = tis.object_name
@@ -221,13 +226,16 @@ const (
 	WHERE otm.object_type NOT IN ('%s', '%s');`
 
 	// No insertion into 'column_count' for indexes
-	InsertIndexStats = `INSERT INTO %s (schema_name, object_name, row_count, reads, writes, is_index, object_type, parent_table_name, size_in_bytes)
+	InsertIndexStats = `INSERT INTO %s (schema_name, object_name, row_count, column_count, reads, writes, reads_per_second, writes_per_second, is_index, object_type, parent_table_name, size_in_bytes)
 	SELECT 
 		itm.index_schema AS schema_name,
 		itm.index_name AS object_name,
 		NULL AS row_count,
-		tii.seq_reads AS reads,
-		tii.row_writes AS writes,
+		tcc.column_count,
+		COALESCE(tii.seq_reads, 0) AS reads,
+		COALESCE(tii.row_writes, 0) AS writes,
+		0 AS reads_per_second,
+		0 as writes_per_second,
 		1 AS is_index,
 		otm.object_type,
 		itm.table_schema || '.' || itm.table_name AS parent_table_name,
@@ -235,6 +243,7 @@ const (
 	FROM %s itm
 	LEFT JOIN %s tii ON itm.index_schema = tii.schema_name AND itm.index_name = tii.object_name and tii.measurement_type='initial'
 	LEFT JOIN %s tis ON itm.index_schema = tis.schema_name AND itm.index_name = tis.object_name
+	LEFT JOIN %s tcc ON itm.index_schema = tcc.schema_name AND itm.index_name = tcc.object_name
 	LEFT JOIN %s otm ON itm.index_schema = otm.schema_name AND itm.index_name = otm.object_name
 	WHERE otm.object_type NOT IN ('%s', '%s');`
 
@@ -278,9 +287,18 @@ func (adb *AssessmentDB) PopulateMigrationAssessmentStats() error {
 		fmt.Sprintf(InsertTableStats, TABLE_INDEX_STATS, TABLE_ROW_COUNTS, TABLE_INDEX_IOPS, TABLE_INDEX_SIZES,
 			TABLE_COLUMNS_COUNT, OBJECT_TYPE_MAPPING, PARTITIONED_TABLE_OBJECT_TYPE, PARTITIONED_INDEX_OBJECT_TYPE),
 		fmt.Sprintf(InsertIndexStats, TABLE_INDEX_STATS, INDEX_TO_TABLE_MAPPING, TABLE_INDEX_IOPS, TABLE_INDEX_SIZES,
-			OBJECT_TYPE_MAPPING, PARTITIONED_TABLE_OBJECT_TYPE, PARTITIONED_INDEX_OBJECT_TYPE),
-		fmt.Sprintf(CreateTempTable, TABLE_INDEX_IOPS, TABLE_INDEX_IOPS),
-		UpdateStatsWithRates,
+			TABLE_COLUMNS_COUNT, OBJECT_TYPE_MAPPING, PARTITIONED_TABLE_OBJECT_TYPE, PARTITIONED_INDEX_OBJECT_TYPE),
+	}
+
+	switch SourceDBType {
+	case "postgresql":
+		statements = append(statements,
+			fmt.Sprintf(CreateTempTable, TABLE_INDEX_IOPS, TABLE_INDEX_IOPS),
+			UpdateStatsWithRates)
+	case "oracle":
+		// already accounted
+	default:
+		panic("invalid source db type")
 	}
 
 	for _, stmt := range statements {

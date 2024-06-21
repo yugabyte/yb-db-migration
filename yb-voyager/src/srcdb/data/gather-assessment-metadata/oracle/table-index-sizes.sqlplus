@@ -1,0 +1,52 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL table-index-sizes.csv
+SELECT schema_name, object_name, object_type, size_in_bytes
+FROM (
+    SELECT
+        owner AS schema_name,
+        segment_name AS object_name,
+        'table' AS object_type,
+        bytes AS size_in_bytes
+    FROM
+        dba_segments
+    WHERE
+        segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
+        AND owner = '&1'
+    UNION ALL
+    SELECT
+        i.owner AS schema_name,
+        i.index_name AS object_name,
+        'index' AS object_type,
+        s.bytes AS size_in_bytes
+    FROM
+        dba_indexes i
+    JOIN
+        dba_segments s ON i.owner = s.owner AND i.index_name = s.segment_name
+    WHERE
+        i.owner = '&1'
+        AND i.index_type NOT IN ('CLUSTER', 'DOMAIN', 'BITMAP', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
+        AND i.index_name NOT IN (
+            SELECT index_name
+            FROM dba_constraints
+            WHERE owner = '&1'
+            AND constraint_type IN ('P', 'U')
+        )
+        AND i.index_name NOT LIKE 'SYS_%'
+        AND i.index_name NOT LIKE 'DR$%'
+);
+SPOOL OFF
+
+EXIT

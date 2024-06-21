@@ -232,8 +232,6 @@ run_sqlplus() {
 export_schema() {
 	args="--export-dir ${EXPORT_DIR}
 		--source-db-type ${SOURCE_DB_TYPE}
-		--source-db-host ${SOURCE_DB_HOST}
-		--source-db-port ${SOURCE_DB_PORT}
 		--source-db-user ${SOURCE_DB_USER}
 		--source-db-password ${SOURCE_DB_PASSWORD}
 		--source-db-name ${SOURCE_DB_NAME}
@@ -243,6 +241,12 @@ export_schema() {
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
 	then
 		args="${args} --source-db-schema ${SOURCE_DB_SCHEMA}"
+	fi
+	if [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" != "" ]
+	then
+		args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
+	else
+		args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
 	fi
 	if [ "${SOURCE_DB_SSL_MODE}" != "" ]
 	then
@@ -282,12 +286,19 @@ export_data() {
 	then
 		args="${args} --table-list ${TABLE_LIST}"
 	fi
+	if [ "${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}" != "" ]
+	then
+	    args="${args} --oracle-cdb-tns-alias ${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}"
+	fi
 
 	if [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" != "" ]
 	then
-		args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
-	else
-		args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
+	    args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
+	fi
+
+	if [ "${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}" = "" ] && [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" = "" ]
+	then
+	    args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
 	fi
 
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
@@ -418,8 +429,7 @@ import_data() {
 import_data_to_source_replica() {
 	args="
 	--export-dir ${EXPORT_DIR}
-	--source-replica-db-user ${SOURCE_REPLICA_DB_USER}
-	--source-replica-db-host ${SOURCE_REPLICA_DB_HOST} 
+	--source-replica-db-user ${SOURCE_REPLICA_DB_USER} 
 	--source-replica-db-name ${SOURCE_REPLICA_DB_NAME} 
 	--source-replica-db-password ${SOURCE_REPLICA_DB_PASSWORD} 
 	--start-clean true
@@ -431,6 +441,12 @@ import_data_to_source_replica() {
 	if [ "${SOURCE_REPLICA_DB_SCHEMA}" != "" ]
 	then
 		args="${args} --source-replica-db-schema ${SOURCE_REPLICA_DB_SCHEMA}"
+	fi
+	if [ "${SOURCE_REPLICA_DB_ORACLE_TNS_ALIAS}" != "" ]
+	then
+		args="${args} --oracle-tns-alias ${SOURCE_REPLICA_DB_ORACLE_TNS_ALIAS}"
+	else
+		args="${args} --source-replica-db-host ${SOURCE_REPLICA_DB_HOST}"
 	fi
 	yb-voyager import data to source-replica ${args} $*
 }
@@ -563,6 +579,17 @@ cat_log_file() {
 	else
 		echo "No ${log_file_name} found."
 	fi	
+}
+
+cat_file() {
+	file_path=$1
+	if [ -f "$file_path" ]
+	then
+		echo "Printing ${file_path} file"
+		cat "$file_path"
+	else
+		echo "No $file_path found."
+	fi
 }
 
 kill_process() {

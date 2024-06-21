@@ -56,7 +56,34 @@ const (
 	ROW_UPDATE_STATUS_NOT_STARTED   = 0
 	ROW_UPDATE_STATUS_IN_PROGRESS   = 1
 	ROW_UPDATE_STATUS_COMPLETED     = 3
-	COLOCATION_CLAUSE				= "colocation"
+	COLOCATION_CLAUSE               = "colocation"
+	EASY                            = "EASY"
+	MEDIUM                          = "MEDIUM"
+	HARD                            = "HARD"
+	//phase names used in call-home payload
+	ANALYZE_PHASE          = "analyze-schema"
+	EXPORT_SCHEMA_PHASE    = "export-schema"
+	EXPORT_DATA_PHASE      = "export-data"
+	IMPORT_SCHEMA_PHASE    = "import-schema"
+	IMPORT_DATA_PHASE      = "import-data"
+	END_MIGRATION_PHASE    = "end-migration"
+	ASSESS_MIGRATION_PHASE = "assess-migration"
+	IMPORT_DATA_FILE_PHASE = "import-data-file"
+	//...more phases
+	OFFLINE        = "offline"
+	LIVE_MIGRATION = "live migration"
+	BULK_DATA_LOAD = "bulk data load from flat files"
+
+	AWS_S3      = "aws-s3"
+	GCS_BUCKETS = "gcs-bukets"
+	AZURE_BLOBS = "azure-blob-storage"
+	LOCAL_DISK  = "local-disk"
+	//status
+	ERROR                = "ERROR"
+	EXIT                 = "EXIT"
+	COMPLETE             = "COMPLETE"
+	COMPLETE_WITH_ERRORS = "COMPLETE-WITH-ERRORS"
+	INPROGRESS           = "IN-PROGRESS"
 )
 
 var supportedSourceDBTypes = []string{ORACLE, MYSQL, POSTGRESQL, YUGABYTEDB}

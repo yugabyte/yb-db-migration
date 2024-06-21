@@ -16,14 +16,16 @@ limitations under the License.
 package cmd
 
 import (
+	"bytes"
+	_ "embed"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
@@ -53,16 +55,17 @@ type sqlInfo struct {
 }
 
 var (
-	anything                     = `.*`
-	ws                           = `[\s\n\t]+`
-	optionalWS                   = `[\s\n\t]*` //optional white spaces
-	ident                        = `[a-zA-Z0-9_."]+`
+	anything   = `.*`
+	ws         = `[\s\n\t]+`
+	optionalWS = `[\s\n\t]*` //optional white spaces
+	//TODO: fix this ident regex for the proper PG identifiers syntax - refer: https://github.com/yugabyte/yb-voyager/pull/1547#discussion_r1629282309
+	ident                        = `[a-zA-Z0-9_."-]+`
 	ifExists                     = opt("IF", "EXISTS")
 	ifNotExists                  = opt("IF", "NOT", "EXISTS")
 	optionalCommaSeperatedTokens = `[^,]+(?:,[^,]+){0,}`
 	commaSeperatedTokens         = `[^,]+(?:,[^,]+){1,}`
 	unqualifiedIdent             = `[a-zA-Z0-9_]+`
-	fetchLocation                = `[a-zA-Z]+`
+	commonClause                 = `[a-zA-Z]+`
 	supportedExtensionsOnYB      = []string{
 		"adminpack", "amcheck", "autoinc", "bloom", "btree_gin", "btree_gist", "citext", "cube",
 		"dblink", "dict_int", "dict_xsyn", "earthdistance", "file_fdw", "fuzzystrmatch", "hll", "hstore",
@@ -70,8 +73,9 @@ var (
 		"orafce", "pageinspect", "pg_buffercache", "pg_cron", "pg_freespacemap", "pg_hint_plan", "pg_prewarm", "pg_stat_monitor",
 		"pg_stat_statements", "pg_trgm", "pg_visibility", "pgaudit", "pgcrypto", "pgrowlocks", "pgstattuple", "plpgsql",
 		"postgres_fdw", "refint", "seg", "sslinfo", "tablefunc", "tcn", "timetravel", "tsm_system_rows",
-		"tsm_system_time", "unaccent", "uuid-ossp", "yb_pg_metrics", "yb_test_extension",
+		"tsm_system_time", "unaccent", `"uuid-ossp"`, "yb_pg_metrics", "yb_test_extension",
 	}
+	dataTypeClause = unqualifiedIdent + optionalWS + opt(unqualifiedIdent) + opt(`\(.*?\)`)
 )
 
 func cat(tokens ...string) string {
@@ -131,9 +135,9 @@ var (
 	spgistRegex               = re("CREATE", "INDEX", ifNotExists, capture(ident), "ON", capture(ident), anything, "USING", "spgist")
 	rtreeRegex                = re("CREATE", "INDEX", ifNotExists, capture(ident), "ON", capture(ident), anything, "USING", "rtree")
 	ginRegex                  = re("CREATE", "INDEX", ifNotExists, capture(ident), "ON", capture(ident), anything, "USING", "GIN", capture(optionalCommaSeperatedTokens))
-	viewWithCheckRegex        = re("VIEW", capture(ident), anything, "WITH", "CHECK", "OPTION")
+	viewWithCheckRegex        = re("VIEW", capture(ident), anything, "WITH", opt(commonClause), "CHECK", "OPTION")
 	rangeRegex                = re("PRECEDING", "and", anything, ":float")
-	fetchRegex                = re("FETCH", capture(fetchLocation), "FROM")
+	fetchRegex                = re("FETCH", capture(commonClause), "FROM")
 	notSupportedFetchLocation = []string{"FIRST", "LAST", "NEXT", "PRIOR", "RELATIVE", "ABSOLUTE", "NEXT", "FORWARD", "BACKWARD"}
 	alterAggRegex             = re("ALTER", "AGGREGATE", capture(ident))
 	dropCollRegex             = re("DROP", "COLLATION", ifExists, capture(commaSeperatedTokens))
@@ -147,7 +151,7 @@ var (
 	currentOfRegex            = re("WHERE", "CURRENT", "OF")
 	amRegex                   = re("CREATE", "ACCESS", "METHOD", capture(ident))
 	idxConcRegex              = re("REINDEX", anything, capture(ident))
-	storedRegex               = re(capture(unqualifiedIdent), capture(unqualifiedIdent), "GENERATED", "ALWAYS", anything, "STORED")
+	storedRegex               = re(capture(unqualifiedIdent), capture(dataTypeClause), "GENERATED", "ALWAYS", anything, "STORED")
 	createTableRegex          = re("CREATE", "TABLE", ifNotExists, capture(ident), anything)
 	partitionColumnsRegex     = re("CREATE", "TABLE", ifNotExists, capture(ident), parenth(capture(optionalCommaSeperatedTokens)), "PARTITION BY", capture("[A-Za-z]+"), parenth(capture(optionalCommaSeperatedTokens)))
 	likeAllRegex              = re("CREATE", "TABLE", ifNotExists, capture(ident), anything, "LIKE", anything, "INCLUDING ALL")
@@ -207,7 +211,7 @@ const (
 	CONSTRAINT_TRIGGER_ISSUE_REASON = "CONSTRAINT TRIGGER not supported yet."
 	COMPOUND_TRIGGER_ISSUE_REASON   = "COMPOUND TRIGGER not supported in YugabyteDB."
 
-	STORED_GENERATED_COLUMN_ISSUE_REASON = "Stored generated column not supported."
+	STORED_GENERATED_COLUMN_ISSUE_REASON = "Stored generated columns are not supported."
 
 	GIST_INDEX_ISSUE_REASON = "Schema contains GIST index which is not supported."
 )
@@ -368,7 +372,7 @@ func checkViews(sqlInfoArr []sqlInfo, fpath string) {
 		} else */
 		if view := viewWithCheckRegex.FindStringSubmatch(sqlInfo.stmt); view != nil {
 			summaryMap["VIEW"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "Schema containing VIEW WITH CHECK OPTION is not supported yet.", "", "", "VIEW", view[1], sqlInfo.formattedStmt)
+			reportCase(fpath, "Schema containing VIEW WITH CHECK OPTION is not supported yet.", "https://github.com/yugabyte/yugabyte-db/issues/22716", "", "VIEW", view[1], sqlInfo.formattedStmt)
 		}
 	}
 }
@@ -423,7 +427,7 @@ func checkSql(sqlInfoArr []sqlInfo, fpath string) {
 				"https://github.com/YugaByte/yugabyte-db/issues/880", separateMultiObj("DROP FOREIGN TABLE", sqlInfo.formattedStmt), "FOREIGN TABLE", "", sqlInfo.formattedStmt)
 		} else if idx := dropIdxConcurRegex.FindStringSubmatch(sqlInfo.stmt); idx != nil {
 			reportCase(fpath, "DROP INDEX CONCURRENTLY not supported yet",
-				"", "", "INDEX", idx[2], sqlInfo.formattedStmt)
+				"https://github.com/yugabyte/yugabyte-db/issues/22717", "", "INDEX", idx[2], sqlInfo.formattedStmt)
 		} else if trig := trigRefRegex.FindStringSubmatch(sqlInfo.stmt); trig != nil {
 			summaryMap["TRIGGER"].invalidCount[sqlInfo.objName] = true
 			reportCase(fpath, "REFERENCING clause (transition tables) not supported yet.",
@@ -434,7 +438,7 @@ func checkSql(sqlInfoArr []sqlInfo, fpath string) {
 		} else if currentOfRegex.MatchString(sqlInfo.stmt) {
 			reportCase(fpath, "WHERE CURRENT OF not supported yet", "https://github.com/YugaByte/yugabyte-db/issues/737", "", "CURSOR", "", sqlInfo.formattedStmt)
 		} else if bulkCollectRegex.MatchString(sqlInfo.stmt) {
-			reportCase(fpath, "BULK COLLECT keyword of oracle is not converted into PostgreSQL compatible syntax", "", "", "", "", sqlInfo.formattedStmt)
+			reportCase(fpath, "BULK COLLECT keyword of oracle is not converted into PostgreSQL compatible syntax", "https://github.com/yugabyte/yb-voyager/issues/1539", "", "", "", sqlInfo.formattedStmt)
 		}
 	}
 }
@@ -455,7 +459,7 @@ func checkDDL(sqlInfoArr []sqlInfo, fpath string) {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
 			// fetch table name using different regex
 			tbl := createTableRegex.FindStringSubmatch(sqlInfo.stmt)
-			reportCase(fpath, STORED_GENERATED_COLUMN_ISSUE_REASON+fmt.Sprintf(" Column is: %s", col[1]),
+			reportCase(fpath, STORED_GENERATED_COLUMN_ISSUE_REASON,
 				"https://github.com/yugabyte/yugabyte-db/issues/10695", "", "TABLE", tbl[2], sqlInfo.formattedStmt)
 		} else if tbl := likeAllRegex.FindStringSubmatch(sqlInfo.stmt); tbl != nil {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
@@ -558,7 +562,7 @@ func checkDDL(sqlInfoArr []sqlInfo, fpath string) {
 				"https://github.com/YugaByte/yugabyte-db/issues/1131", "", "VIEW", spc[1], sqlInfo.formattedStmt)
 		} else if tbl := cLangRegex.FindStringSubmatch(sqlInfo.stmt); tbl != nil {
 			reportCase(fpath, "LANGUAGE C not supported yet.",
-				"", "", "FUNCTION", tbl[2], sqlInfo.formattedStmt)
+				"https://github.com/yugabyte/yb-voyager/issues/1540", "", "FUNCTION", tbl[2], sqlInfo.formattedStmt)
 			summaryMap["FUNCTION"].invalidCount[sqlInfo.objName] = true
 		} else if regMatch := partitionColumnsRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			// example1 - CREATE TABLE example1( 	id numeric NOT NULL, 	country_code varchar(3), 	record_type varchar(5), PRIMARY KEY (id,country_code) ) PARTITION BY RANGE (country_code, record_type) ;
@@ -626,19 +630,19 @@ func checkDDL(sqlInfoArr []sqlInfo, fpath string) {
 				"https://github.com/yugabyte/yb-voyager/issues/705", `remove "temporary" and change it to "drop table"`, objType, sqlInfo.objName, sqlInfo.formattedStmt)
 		} else if regMatch := anydataRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "AnyData datatype doesn't have a mapping in YugabyteDB", "", `Remove the column with AnyData datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
+			reportCase(fpath, "AnyData datatype doesn't have a mapping in YugabyteDB", "https://github.com/yugabyte/yb-voyager/issues/1541", `Remove the column with AnyData datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
 		} else if regMatch := anydatasetRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "AnyDataSet datatype doesn't have a mapping in YugabyteDB", "", `Remove the column with AnyDataSet datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
+			reportCase(fpath, "AnyDataSet datatype doesn't have a mapping in YugabyteDB", "https://github.com/yugabyte/yb-voyager/issues/1541", `Remove the column with AnyDataSet datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
 		} else if regMatch := anyTypeRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "AnyType datatype doesn't have a mapping in YugabyteDB", "", `Remove the column with AnyType datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
+			reportCase(fpath, "AnyType datatype doesn't have a mapping in YugabyteDB", "https://github.com/yugabyte/yb-voyager/issues/1541", `Remove the column with AnyType datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
 		} else if regMatch := uriTypeRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "URIType datatype doesn't have a mapping in YugabyteDB", "", `Remove the column with URIType datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
+			reportCase(fpath, "URIType datatype doesn't have a mapping in YugabyteDB", "https://github.com/yugabyte/yb-voyager/issues/1541", `Remove the column with URIType datatype or change it to a relevant supported datatype`, "TABLE", regMatch[2], sqlInfo.formattedStmt)
 		} else if regMatch := jsonFuncRegex.FindStringSubmatch(sqlInfo.stmt); regMatch != nil {
 			summaryMap[regMatch[2]].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "JSON_ARRAYAGG() function is not available in YugabyteDB", "", `Rename the function to YugabyteDB's equivalent JSON_AGG()`, regMatch[2], regMatch[3], sqlInfo.formattedStmt)
+			reportCase(fpath, "JSON_ARRAYAGG() function is not available in YugabyteDB", "https://github.com/yugabyte/yb-voyager/issues/1542", `Rename the function to YugabyteDB's equivalent JSON_AGG()`, regMatch[2], regMatch[3], sqlInfo.formattedStmt)
 		}
 
 	}
@@ -662,7 +666,7 @@ func checkRemaining(sqlInfoArr []sqlInfo, fpath string) {
 	for _, sqlInfo := range sqlInfoArr {
 		if trig := compoundTrigRegex.FindStringSubmatch(sqlInfo.stmt); trig != nil {
 			reportCase(fpath, COMPOUND_TRIGGER_ISSUE_REASON,
-				"", "", "TRIGGER", trig[2], sqlInfo.formattedStmt)
+				"https://github.com/yugabyte/yb-voyager/issues/1543", "", "TRIGGER", trig[2], sqlInfo.formattedStmt)
 			summaryMap["TRIGGER"].invalidCount[sqlInfo.objName] = true
 		}
 	}
@@ -687,7 +691,7 @@ func checkExtensions(sqlInfoArr []sqlInfo, fpath string) {
 	for _, sqlInfo := range sqlInfoArr {
 		if sqlInfo.objName != "" && !slices.Contains(supportedExtensionsOnYB, sqlInfo.objName) {
 			summaryMap["EXTENSION"].invalidCount[sqlInfo.objName] = true
-			reportCase(fpath, "This extension is not supported in YugabyteDB.", "", "", "EXTENSION",
+			reportCase(fpath, "This extension is not supported in YugabyteDB.", "https://github.com/yugabyte/yb-voyager/issues/1538", "", "EXTENSION",
 				sqlInfo.objName, sqlInfo.formattedStmt)
 		}
 		if strings.ToLower(sqlInfo.objName) == "hll" {
@@ -915,118 +919,51 @@ func initializeSummaryMap() {
 
 }
 
-func generateHTMLReport(Report utils.SchemaReport) string {
-	//appending to doc line by line for better readability
+//go:embed templates/schema_analysis_report.html
+var schemaAnalysisHtmlTmpl string
 
-	//reading source db metainfo
-	msr, err := metaDB.GetMigrationStatusRecord()
+//go:embed templates/schema_analysis_report.txt
+var schemaAnalysisTxtTmpl string
+
+func applyTemplate(Report utils.SchemaReport, templateString string) (string, error) {
+	tmpl, err := template.New("schema_analysis_report").Funcs(funcMap).Parse(templateString)
 	if err != nil {
-		utils.ErrExit("generate html report: load migration status record: %s", err)
+		return "", fmt.Errorf("failed to parse template file: %w", err)
 	}
 
-	//Broad details
-	htmlstring := "<html><body bgcolor='#EFEFEF'><h1>Database Migration Report</h1>"
-	htmlstring += "<table><tr><th>Database Name</th><td>" + Report.SchemaSummary.DBName + "</td></tr>"
-	htmlstring += "<tr><th>Schema Name(s)</th><td>" + strings.Join(Report.SchemaSummary.SchemaNames, ",") + "</td></tr>"
-	htmlstring += "<tr><th>" + strings.ToUpper(msr.SourceDBConf.DBType) + " Version</th><td>" + Report.SchemaSummary.DBVersion + "</td></tr></table>"
-
-	//Summary of report
-	htmlstring += "<br><table width='100%' table-layout='fixed'><tr><th>Object</th><th>Total Count</th><th>Valid Count</th><th>Invalid Count</th><th width='40%'>Object Names</th><th width='30%'>Details</th></tr>"
-	for i := 0; i < len(Report.SchemaSummary.DBObjects); i++ {
-		if Report.SchemaSummary.DBObjects[i].TotalCount != 0 {
-			htmlstring += "<tr><th>" + Report.SchemaSummary.DBObjects[i].ObjectType + "</th><td style='text-align: center;'>" + strconv.Itoa(Report.SchemaSummary.DBObjects[i].TotalCount) + "</td><td style='text-align: center;'>" + strconv.Itoa(Report.SchemaSummary.DBObjects[i].TotalCount-Report.SchemaSummary.DBObjects[i].InvalidCount) + "</td><td style='text-align: center;'>" + strconv.Itoa(Report.SchemaSummary.DBObjects[i].InvalidCount) + "</td><td width='40%'>" + Report.SchemaSummary.DBObjects[i].ObjectNames + "</td><td width='30%'>" + Report.SchemaSummary.DBObjects[i].Details + "</td></tr>"
-		}
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, Report)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute parse template file: %w", err)
 	}
-	htmlstring += "</table><br>"
 
-	//Issues/Error messages
-	htmlstring += "<ul list-style-type='disc'>"
-	for i := 0; i < len(Report.Issues); i++ {
-		if Report.Issues[i].ObjectType != "" {
-			htmlstring += "<li>Issue in Object " + Report.Issues[i].ObjectType + ":</li><ul>"
-		} else {
-			htmlstring += "<li>Issue " + Report.Issues[i].ObjectType + ":</li><ul>"
-		}
-		if Report.Issues[i].ObjectName != "" {
-			htmlstring += "<li>Object Name: " + Report.Issues[i].ObjectName + "</li>"
-		}
-		if Report.Issues[i].Reason != "" {
-			htmlstring += "<li>Reason: " + Report.Issues[i].Reason + "</li>"
-		}
-		if Report.Issues[i].SqlStatement != "" {
-			htmlstring += "<li>SQL Statement: " + Report.Issues[i].SqlStatement + "</li>"
-		}
-		if Report.Issues[i].FilePath != "" {
-			htmlstring += "<li>File Path: " + Report.Issues[i].FilePath + "<a href='" + Report.Issues[i].FilePath + "'> [Preview]</a></li>"
-		}
-		if Report.Issues[i].Suggestion != "" {
-			htmlstring += "<li>Suggestion: " + Report.Issues[i].Suggestion + "</li>"
-		}
-		if Report.Issues[i].GH != "" {
-			htmlstring += "<li><a href='" + Report.Issues[i].GH + "'>Github Issue Link</a></li>"
-		}
-		htmlstring += "</ul>"
-	}
-	htmlstring += "</ul>"
-	if len(Report.SchemaSummary.Notes) > 0 {
-		htmlstring += "<h3>Notes</h3>"
-		htmlstring += "<ul list-style-type='disc'>"
-		for i := 0; i < len(Report.SchemaSummary.Notes); i++ {
-			htmlstring += "<li>" + Report.SchemaSummary.Notes[i] + "</li>"
-		}
-		htmlstring += "</ul>"
-	}
-	htmlstring += "</body></html>"
-	return htmlstring
-
+	return buf.String(), nil
 }
 
-func generateTxtReport(Report utils.SchemaReport) string {
-	txtstring := "+---------------------------+\n"
-	txtstring += "| Database Migration Report |\n"
-	txtstring += "+---------------------------+\n"
-	txtstring += "Database Name\t" + Report.SchemaSummary.DBName + "\n"
-	txtstring += "Schema Name(s)\t" + strings.Join(Report.SchemaSummary.SchemaNames, ",") + "\n"
-	txtstring += "DB Version\t" + Report.SchemaSummary.DBVersion + "\n\n"
-	txtstring += "Objects:\n\n"
-	//if names for json objects need to be changed make sure to change the tab spaces accordingly as well.
-	for i := 0; i < len(Report.SchemaSummary.DBObjects); i++ {
-		if Report.SchemaSummary.DBObjects[i].TotalCount != 0 {
-			txtstring += fmt.Sprintf("%-16s", "Object:") + Report.SchemaSummary.DBObjects[i].ObjectType + "\n"
-			txtstring += fmt.Sprintf("%-16s", "Total Count:") + strconv.Itoa(Report.SchemaSummary.DBObjects[i].TotalCount) + "\n"
-			txtstring += fmt.Sprintf("%-16s", "Valid Count:") + strconv.Itoa(Report.SchemaSummary.DBObjects[i].TotalCount-Report.SchemaSummary.DBObjects[i].InvalidCount) + "\n"
-			txtstring += fmt.Sprintf("%-16s", "Invalid Count:") + strconv.Itoa(Report.SchemaSummary.DBObjects[i].InvalidCount) + "\n"
-			txtstring += fmt.Sprintf("%-16s", "Object Names:") + Report.SchemaSummary.DBObjects[i].ObjectNames + "\n"
-			if Report.SchemaSummary.DBObjects[i].Details != "" {
-				txtstring += fmt.Sprintf("%-16s", "Details:") + Report.SchemaSummary.DBObjects[i].Details + "\n"
+var funcMap = template.FuncMap{
+	"join": func(arr []string, sep string) string {
+		return strings.Join(arr, sep)
+	},
+	"sub": func(a int, b int) int {
+		return a - b
+	},
+	"add": func(a int, b int) int {
+		return a + b
+	},
+	"sumDbObjects": func(dbObjects []utils.DBObject, field string) int {
+		total := 0
+		for _, obj := range dbObjects {
+			switch field {
+			case "TotalCount":
+				total += obj.TotalCount
+			case "InvalidCount":
+				total += obj.InvalidCount
+			case "ValidCount":
+				total += obj.TotalCount - obj.InvalidCount
 			}
-			txtstring += "\n"
 		}
-	}
-	if len(Report.Issues) != 0 {
-		txtstring += "Issues:\n\n"
-	}
-	for i := 0; i < len(Report.Issues); i++ {
-		txtstring += "Error in Object " + Report.Issues[i].ObjectType + ":\n"
-		txtstring += "-Object Name: " + Report.Issues[i].ObjectName + "\n"
-		txtstring += "-Reason: " + Report.Issues[i].Reason + "\n"
-		txtstring += "-SQL Statement: " + Report.Issues[i].SqlStatement + "\n"
-		txtstring += "-File Path: " + Report.Issues[i].FilePath + "\n"
-		if Report.Issues[i].Suggestion != "" {
-			txtstring += "-Suggestion: " + Report.Issues[i].Suggestion + "\n"
-		}
-		if Report.Issues[i].GH != "" {
-			txtstring += "-Github Issue Link: " + Report.Issues[i].GH + "\n"
-		}
-		txtstring += "\n"
-	}
-	if len(Report.SchemaSummary.Notes) > 0 {
-		txtstring += "Notes:\n\n"
-		for i := 0; i < len(Report.SchemaSummary.Notes); i++ {
-			txtstring += strconv.Itoa(i+1) + ". " + Report.SchemaSummary.Notes[i] + "\n"
-		}
-	}
-	return txtstring
+		return total
+	},
 }
 
 // add info to the 'reportStruct' variable and return
@@ -1086,20 +1023,27 @@ func analyzeSchema() {
 
 	switch analyzeSchemaReportFormat {
 	case "html":
-		htmlReport := generateHTMLReport(schemaAnalysisReport)
-		finalReport = utils.PrettifyHtmlString(htmlReport)
-	case "json":
-		jsonBytes, err := json.Marshal(schemaAnalysisReport)
+		finalReport, err = applyTemplate(schemaAnalysisReport, schemaAnalysisHtmlTmpl)
 		if err != nil {
-			panic(err)
+			utils.ErrExit("failed to apply template for html schema analysis report: %v", err)
 		}
-		reportJsonString := string(jsonBytes)
-		finalReport = utils.PrettifyJsonString(reportJsonString)
+	case "json":
+		jsonReportBytes, err := json.MarshalIndent(schemaAnalysisReport, "", "    ")
+		if err != nil {
+			utils.ErrExit("failed to marshal the report struct into json schema analysis report: %v", err)
+		}
+		finalReport = string(jsonReportBytes)
 	case "txt":
-		finalReport = generateTxtReport(schemaAnalysisReport)
+		finalReport, err = applyTemplate(schemaAnalysisReport, schemaAnalysisTxtTmpl)
+		if err != nil {
+			utils.ErrExit("failed to apply template for txt schema analysis report: %v", err)
+		}
 	case "xml":
-		byteReport, _ := xml.MarshalIndent(schemaAnalysisReport, "", "\t")
-		finalReport = string(byteReport)
+		xmlReportBytes, err := xml.MarshalIndent(schemaAnalysisReport, "", "\t")
+		if err != nil {
+			utils.ErrExit("failed to marshal the report struct into xml schema analysis report: %v", err)
+		}
+		finalReport = string(xmlReportBytes)
 	default:
 		panic(fmt.Sprintf("invalid report format: %q", analyzeSchemaReportFormat))
 	}
@@ -1125,29 +1069,34 @@ func analyzeSchema() {
 	}
 	fmt.Printf("-- find schema analysis report at: %s\n", reportPath)
 
-	payload := callhome.GetPayload(exportDir, migrationUUID)
+	packAndSendAnalyzeSchemaPayload(COMPLETE)
+
+	schemaAnalysisReport := createSchemaAnalysisIterationCompletedEvent(schemaAnalysisReport)
+	controlPlane.SchemaAnalysisIterationCompleted(&schemaAnalysisReport)
+}
+
+func packAndSendAnalyzeSchemaPayload(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationPhase = ANALYZE_PHASE
 	var callhomeIssues []utils.Issue
 	for _, issue := range schemaAnalysisReport.Issues {
 		issue.SqlStatement = "" // Obfuscate sensitive information before sending to callhome cluster
 		callhomeIssues = append(callhomeIssues, issue)
 	}
-	issues, err := json.Marshal(callhomeIssues)
-	if err != nil {
-		log.Errorf("Error while parsing 'issues' json: %v", err)
-	} else {
-		payload.Issues = string(issues)
+	analyzePayload := callhome.AnalyzePhasePayload{
+		Issues:          callhome.MarshalledJsonString(callhomeIssues),
+		DatabaseObjects: callhome.MarshalledJsonString(schemaAnalysisReport.SchemaSummary.DBObjects),
 	}
-	dbobjects, err := json.Marshal(schemaAnalysisReport.SchemaSummary.DBObjects)
-	if err != nil {
-		log.Errorf("Error while parsing 'database_objects' json: %v", err)
-	} else {
-		payload.DBObjects = string(dbobjects)
+	payload.PhasePayload = callhome.MarshalledJsonString(analyzePayload)
+	payload.Status = status
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
 	}
-
-	callhome.PackAndSendPayload(exportDir)
-
-	schemaAnalysisReport := createSchemaAnalysisIterationCompletedEvent(schemaAnalysisReport)
-	controlPlane.SchemaAnalysisIterationCompleted(&schemaAnalysisReport)
 }
 
 var analyzeSchemaCmd = &cobra.Command{

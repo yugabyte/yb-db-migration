@@ -38,7 +38,7 @@ type Oracle struct {
 }
 
 // In addition to the types listed below, user-defined types (UDTs) are also not supported if Debezium is used for data export. The UDT case is handled inside the `GetColumnsWithSupportedTypes()`.
-var oracleUnsupportedDataTypes = []string{"BLOB", "CLOB", "NCLOB", "BFILE", "URITYPE", "XMLTYPE",
+var OracleUnsupportedDataTypes = []string{"BLOB", "CLOB", "NCLOB", "BFILE", "URITYPE", "XMLTYPE",
 	"AnyData", "AnyType", "AnyDataSet", "ROWID", "UROWID", "SDO_GEOMETRY", "SDO_POINT_TYPE", "SDO_ELEM_INFO_ARRAY", "SDO_ORDINATE_ARRAY", "SDO_GTYPE", "SDO_SRID", "SDO_POINT", "SDO_ORDINATES", "SDO_DIM_ARRAY", "SDO_ORGSCL_TYPE", "SDO_STRING_ARRAY", "JSON"}
 
 func newOracle(s *Source) *Oracle {
@@ -182,20 +182,20 @@ func (ora *Oracle) getConnectionUri() string {
 func (ora *Oracle) GetConnectionUriWithoutPassword() string {
 	source := ora.source
 	connectionString := GetOracleConnectionString(source.Host, source.Port, source.DBName, source.DBSid, source.TNSAlias)
-	return fmt.Sprintf(`user="%s" connectString="%s"`, source.User, connectionString)
+	return fmt.Sprintf(`%s@%s`, source.User, connectionString)
 }
 
 func GetOracleConnectionString(host string, port int, dbname string, dbsid string, tnsalias string) string {
 	switch true {
 	case dbsid != "":
-		return fmt.Sprintf(`(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=%s)(PORT=%d))(CONNECT_DATA=(SID=%s)))`,
+		return fmt.Sprintf(`(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = %s)(PORT = %d))(CONNECT_DATA = (SID = %s)))`,
 			host, port, dbsid)
 
 	case tnsalias != "":
 		return tnsalias
 
 	case dbname != "":
-		return fmt.Sprintf(`(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=%s)(PORT=%d))(CONNECT_DATA=(SERVICE_NAME=%s)))`,
+		return fmt.Sprintf(`(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = %s)(PORT = %d))(CONNECT_DATA = (SERVICE_NAME = %s)))`,
 			host, port, dbname)
 	}
 	return ""
@@ -291,6 +291,17 @@ func (ora *Oracle) GetCharset() (string, error) {
 		return "", fmt.Errorf("failed to query %q for database encoding: %s", query, err)
 	}
 	return charset, nil
+}
+
+func (ora *Oracle) GetDatabaseSize() (int64, error) {
+	var dbSize int64
+	query := fmt.Sprintf("SELECT SUM(BYTES) FROM DBA_SEGMENTS WHERE OWNER = '%s'", ora.source.Schema)
+	err := ora.db.QueryRow(query).Scan(&dbSize)
+	if err != nil {
+		return 0, fmt.Errorf("error in querying database encoding: %w", err)
+	}
+	log.Infof("Total Database size of Oracle sourceDB: %v", dbSize)
+	return dbSize, nil
 }
 
 func (ora *Oracle) FilterUnsupportedTables(migrationUUID uuid.UUID, tableList []sqlname.NameTuple, useDebezium bool) ([]sqlname.NameTuple, []sqlname.NameTuple) {
@@ -500,7 +511,7 @@ func (ora *Oracle) GetColumnsWithSupportedTypes(tableList []sqlname.NameTuple, u
 	supportedTableColumnsMap := utils.NewStructMap[sqlname.NameTuple, []string]()
 	unsupportedTableColumnsMap := utils.NewStructMap[sqlname.NameTuple, []string]()
 	if isStreamingEnabled {
-		oracleUnsupportedDataTypes = append(oracleUnsupportedDataTypes, "NCHAR", "NVARCHAR2")
+		OracleUnsupportedDataTypes = append(OracleUnsupportedDataTypes, "NCHAR", "NVARCHAR2")
 	}
 	for _, tableName := range tableList {
 		columns, dataTypes, dataTypesOwner, err := ora.getTableColumns(tableName)
@@ -512,7 +523,7 @@ func (ora *Oracle) GetColumnsWithSupportedTypes(tableList []sqlname.NameTuple, u
 		var unsupportedColumnNames []string
 		for i := 0; i < len(columns); i++ {
 			isUdtWithDebezium := (dataTypesOwner[i] == sname) && useDebezium // datatype owner check is for UDT type detection as VARRAY are created using UDT
-			if isUdtWithDebezium || utils.ContainsAnySubstringFromSlice(oracleUnsupportedDataTypes, dataTypes[i]) {
+			if isUdtWithDebezium || utils.ContainsAnySubstringFromSlice(OracleUnsupportedDataTypes, dataTypes[i]) {
 				log.Infof("Skipping unsupproted column %s.%s of type %s", tname, columns[i], dataTypes[i])
 				unsupportedColumnNames = append(unsupportedColumnNames, fmt.Sprintf("%s.%s of type %s", tname, columns[i], dataTypes[i]))
 			} else {

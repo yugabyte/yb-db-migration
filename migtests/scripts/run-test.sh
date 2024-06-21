@@ -62,7 +62,10 @@ main() {
 
 	step "Assess Migration"
 	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
-		assess_migration
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
 
 		step "Validate Assessment Reports"
 		# Checking if the assessment reports were created
@@ -132,6 +135,12 @@ main() {
 	step "Import schema."
 	import_schema
 	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi
 
 	step "Import data."
 	import_data

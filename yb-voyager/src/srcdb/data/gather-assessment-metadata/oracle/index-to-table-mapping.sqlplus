@@ -1,0 +1,41 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL index-to-table-mapping.csv
+SELECT index_schema, index_name, table_schema, table_name
+FROM (
+    SELECT
+        i.owner AS index_schema,
+        i.index_name AS index_name,
+        i.table_owner AS table_schema,
+        i.table_name AS table_name
+    FROM 
+        dba_indexes i
+    WHERE
+        i.owner = '&1'
+        AND i.index_type NOT IN ('CLUSTER', 'DOMAIN', 'BITMAP', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
+        AND i.index_name NOT IN (
+            SELECT index_name
+            FROM dba_constraints
+            WHERE owner = '&1'
+            AND constraint_type IN ('P', 'U') -- ignoring primary and unique keys
+        )
+        AND i.index_name NOT LIKE 'SYS_%'
+        AND i.index_name NOT LIKE 'DR$%'
+);
+-- SYS_ indexes in Oracle are internal system indexes created and maintained by Oracle Database
+-- DR$ indexes are internal to Oracle Text, part of Oracle's internal management of text indexes
+SPOOL OFF
+
+EXIT

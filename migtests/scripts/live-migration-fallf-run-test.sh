@@ -25,7 +25,11 @@ export PATH="${PATH}:/usr/lib/oracle/21/client64/bin"
 export QUEUE_SEGMENT_MAX_BYTES=400
 
 # Order of env.sh import matters.
-source ${TEST_DIR}/env.sh
+if [ -f "${TEST_DIR}/live_env.sh" ]; then
+    source "${TEST_DIR}/live_env.sh"
+else
+    source "${TEST_DIR}/env.sh"
+fi
 
 if [ "${SOURCE_DB_TYPE}" = "oracle" ]
 then
@@ -71,7 +75,10 @@ main() {
 
 	step "Assess Migration"
 	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
-		assess_migration
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
 
 		step "Validate Assessment Reports"
 		# Checking if the assessment reports were created
@@ -122,6 +129,12 @@ main() {
 	step "Import schema."
 	import_schema
 	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi
 
 	step "Export data."
 	# false if exit code of export_data is non-zero

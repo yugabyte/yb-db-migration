@@ -16,6 +16,7 @@ limitations under the License.
 package migassessment
 
 var AssessmentDir string
+var SourceDBType string
 
 type Record map[string]any
 

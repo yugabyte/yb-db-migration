@@ -463,6 +463,47 @@ func (pg *PostgreSQL) GetCharset() (string, error) {
 	return encoding, nil
 }
 
+func (pg *PostgreSQL) GetDatabaseSize() (int64, error) {
+	var totalSchemasSize, totalSize int64
+	schemaList := strings.Replace(pg.source.Schema, "|", "','", -1)
+	query := fmt.Sprintf(`SELECT
+    nspname AS schema_name,
+    SUM(pg_total_relation_size(pg_class.oid)) AS total_size
+FROM
+    pg_class
+    JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+WHERE
+    nspname in ('%s')  
+GROUP BY
+    nspname;`, schemaList)
+
+	rows, err := pg.db.Query(query)
+	if err != nil {
+		return -1, fmt.Errorf("error in querying(%q) source database for sequence names: %v", query, err)
+	}
+
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			log.Warnf("close rows for query %q: %v", query, closeErr)
+		}
+	}()
+
+	var schemaName string
+	for rows.Next() {
+		err = rows.Scan(&schemaName, &totalSize)
+		if err != nil {
+			return -1, fmt.Errorf("error in scanning query rows for schemas ('%s'): %v", schemaList, err)
+		}
+		totalSchemasSize += totalSize
+	}
+	if rows.Err() != nil {
+		return -1, fmt.Errorf("error in scanning query rows for schemas('%s'): %v", schemaList, rows.Err())
+	}
+	log.Infof("Total size of all PG sourceDB schemas ('%s'): %v", schemaList, totalSchemasSize)
+	return totalSchemasSize, nil
+}
+
 func (pg *PostgreSQL) FilterUnsupportedTables(migrationUUID uuid.UUID, tableList []sqlname.NameTuple, useDebezium bool) ([]sqlname.NameTuple, []sqlname.NameTuple) {
 	return tableList, nil
 }

@@ -64,6 +64,7 @@ var valueConverter dbzm.ValueConverter
 
 var TableNameToSchema *utils.StructMap[sqlname.NameTuple, map[string]map[string]string]
 var conflictDetectionCache *ConflictDetectionCache
+var targetDBDetails *callhome.TargetDBDetails
 
 var importDataCmd = &cobra.Command{
 	Use: "data",
@@ -122,6 +123,7 @@ func importDataCommandFn(cmd *cobra.Command, args []string) {
 	if err != nil {
 		utils.ErrExit("Failed to initialize the target DB: %s", err)
 	}
+	targetDBDetails = tdb.GetCallhomeTargetDBInfo()
 
 	err = InitNameRegistry(exportDir, importerRole, nil, nil, &tconf, tdb, bool(startClean))
 	if err != nil {
@@ -392,8 +394,6 @@ func importData(importFileTasks []*ImportFileTask) {
 		importDataStartEvent := createSnapshotImportStartedEvent()
 		controlPlane.SnapshotImportStarted(&importDataStartEvent)
 	}
-
-	payload := callhome.GetPayload(exportDir, migrationUUID)
 	updateTargetConfInMigrationStatus()
 	msr, err := metaDB.GetMigrationStatusRecord()
 	if err != nil {
@@ -423,9 +423,6 @@ func importData(importFileTasks []*ImportFileTask) {
 	targetDBVersion := tdb.GetVersion()
 
 	fmt.Printf("%s version: %s\n", tconf.TargetDBType, targetDBVersion)
-
-	payload.TargetDBVersion = targetDBVersion
-	//payload.NodeCount = len(tconfs) // TODO: Figure out way to populate NodeCount.
 
 	err = tdb.CreateVoyagerSchema()
 	if err != nil {
@@ -516,11 +513,13 @@ func importData(importFileTasks []*ImportFileTask) {
 			time.Sleep(time.Second * 2)
 		}
 		utils.PrintAndLog("snapshot data import complete\n\n")
-		callhome.PackAndSendPayload(exportDir)
 	}
 
 	if !dbzm.IsDebeziumForDataExport(exportDir) {
-		executePostSnapshotImportSqls()
+		errImport := executePostSnapshotImportSqls()
+		if errImport != nil {
+			utils.ErrExit("Error in importing post-snapshot-import sql: %v", err)
+		}
 		displayImportedRowCountSnapshot(state, importFileTasks)
 	} else {
 		if changeStreamingIsEnabled(importType) {
@@ -577,6 +576,51 @@ func importData(importFileTasks []*ImportFileTask) {
 	if importerRole == TARGET_DB_IMPORTER_ROLE {
 		importDataCompletedEvent := createSnapshotImportCompletedEvent()
 		controlPlane.SnapshotImportCompleted(&importDataCompletedEvent)
+		packAndSendImportDataPayload(COMPLETE) // TODO: later for other import data commands
+	}
+
+}
+
+func packAndSendImportDataPayload(status string) {
+
+	if !callhome.SendDiagnostics {
+		return
+	}
+	//basic payload details
+	payload := createCallhomePayload()
+	switch importType {
+	case SNAPSHOT_ONLY:
+		payload.MigrationType = OFFLINE
+	case SNAPSHOT_AND_CHANGES:
+		payload.MigrationType = LIVE_MIGRATION //TODO: add FF/FB details
+	}
+	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
+	payload.MigrationPhase = IMPORT_DATA_PHASE
+	importDataPayload := callhome.ImportDataPhasePayload{
+		ParallelJobs: int64(tconf.Parallelism),
+		StartClean:   bool(startClean),
+	}
+
+	//Getting the imported snapshot details
+	importRowsMap, err := getImportedSnapshotRowsMap("target")
+	if err != nil {
+		log.Errorf("callhome: error in getting the import data: %v", err)
+	} else {
+		importRowsMap.IterKV(func(key sqlname.NameTuple, value int64) (bool, error) {
+			importDataPayload.TotalRows += value
+			if value > importDataPayload.LargestTableRows {
+				importDataPayload.LargestTableRows = value
+			}
+			return true, nil
+		})
+	}
+
+	payload.PhasePayload = callhome.MarshalledJsonString(importDataPayload)
+	payload.Status = status
+
+	err = callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
 	}
 }
 
@@ -877,12 +921,16 @@ func splitFilesForTable(state *ImportDataState, filePath string, t sqlname.NameT
 	log.Infof("splitFilesForTable: done splitting data file %q for table %q", filePath, t)
 }
 
-func executePostSnapshotImportSqls() {
+func executePostSnapshotImportSqls() error {
 	sequenceFilePath := filepath.Join(exportDir, "data", "postdata.sql")
 	if utils.FileOrFolderExists(sequenceFilePath) {
 		fmt.Printf("setting resume value for sequences %10s\n", "")
-		executeSqlFile(sequenceFilePath, "SEQUENCE", func(_, _ string) bool { return false })
+		err := executeSqlFile(sequenceFilePath, "SEQUENCE", func(_, _ string) bool { return false })
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func submitBatch(batch *Batch, updateProgressFn func(int64), importBatchArgsProto *tgtdb.ImportBatchArgs) {
@@ -988,46 +1036,6 @@ func dropIdx(conn *pgx.Conn, idxName string) error {
 	return nil
 }
 
-func executeSqlFile(file string, objType string, skipFn func(string, string) bool) {
-	log.Infof("Execute SQL file %q on target %q", file, tconf.Host)
-	conn := newTargetConn()
-
-	defer func() {
-		if conn != nil {
-			conn.Close(context.Background())
-		}
-	}()
-
-	sqlInfoArr := parseSqlFileForObjectType(file, objType)
-	for _, sqlInfo := range sqlInfoArr {
-		if conn == nil {
-			conn = newTargetConn()
-		}
-
-		setOrSelectStmt := strings.HasPrefix(strings.ToUpper(sqlInfo.stmt), "SET ") ||
-			strings.HasPrefix(strings.ToUpper(sqlInfo.stmt), "SELECT ")
-		if !setOrSelectStmt && skipFn != nil && skipFn(objType, sqlInfo.stmt) {
-			continue
-		}
-
-		if objType == "TABLE" {
-			stmt := strings.ToUpper(sqlInfo.stmt)
-			skip := strings.Contains(stmt, "ALTER TABLE") && strings.Contains(stmt, "REPLICA IDENTITY")
-			if skip {
-				//skipping DDLS like ALTER TABLE ... REPLICA IDENTITY .. as this is not supported in YB
-				log.Infof("Skipping DDL: %s", sqlInfo.stmt)
-				continue
-			}
-		}
-
-		err := executeSqlStmtWithRetries(&conn, sqlInfo, objType)
-		if err != nil {
-			conn.Close(context.Background())
-			conn = nil
-		}
-	}
-}
-
 func setOrafceSearchPath(conn *pgx.Conn) {
 	// append oracle schema in the search_path for orafce
 	updateSearchPath := `SELECT set_config('search_path', current_setting('search_path') || ', oracle', false)`
@@ -1054,84 +1062,6 @@ func getIndexName(sqlQuery string, indexName string) (string, error) {
 	return "", fmt.Errorf("could not find `ON` keyword in the CREATE INDEX statement")
 }
 
-func executeSqlStmtWithRetries(conn **pgx.Conn, sqlInfo sqlInfo, objType string) error {
-	var err error
-	log.Infof("On %s run query:\n%s\n", tconf.Host, sqlInfo.formattedStmt)
-	for retryCount := 0; retryCount <= DDL_MAX_RETRY_COUNT; retryCount++ {
-		if retryCount > 0 { // Not the first iteration.
-			log.Infof("Sleep for 5 seconds before retrying for %dth time", retryCount)
-			time.Sleep(time.Second * 5)
-			log.Infof("RETRYING DDL: %q", sqlInfo.stmt)
-		}
-
-		if bool(flagPostSnapshotImport) && strings.Contains(objType, "INDEX") {
-			err = beforeIndexCreation(sqlInfo, conn, objType)
-			if err != nil {
-				return fmt.Errorf("before index creation: %w", err)
-			}
-		}
-		_, err = (*conn).Exec(context.Background(), sqlInfo.formattedStmt)
-		if err == nil {
-			utils.PrintSqlStmtIfDDL(sqlInfo.stmt, utils.GetObjectFileName(filepath.Join(exportDir, "schema"), objType))
-			return nil
-		}
-
-		log.Errorf("DDL Execution Failed for %q: %s", sqlInfo.formattedStmt, err)
-		if strings.Contains(strings.ToLower(err.Error()), "conflicts with higher priority transaction") {
-			// creating fresh connection
-			(*conn).Close(context.Background())
-			*conn = newTargetConn()
-			continue
-		} else if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(SCHEMA_VERSION_MISMATCH_ERR)) &&
-			(objType == "INDEX" || objType == "PARTITION_INDEX") { // retriable error
-			// creating fresh connection
-			(*conn).Close(context.Background())
-			*conn = newTargetConn()
-
-			// Extract the schema name and add to the index name
-			fullyQualifiedObjName, err := getIndexName(sqlInfo.stmt, sqlInfo.objName)
-			if err != nil {
-				utils.ErrExit("extract qualified index name from DDL [%v]: %v", sqlInfo.stmt, err)
-			}
-
-			// DROP INDEX in case INVALID index got created
-			// `err` is already being used for retries, so using `err2`
-			err2 := dropIdx(*conn, fullyQualifiedObjName)
-			if err2 != nil {
-				return fmt.Errorf("drop invalid index %q: %w", fullyQualifiedObjName, err2)
-			}
-			continue
-		} else if missingRequiredSchemaObject(err) {
-			log.Infof("deffering execution of SQL: %s", sqlInfo.formattedStmt)
-			deferredSqlStmts = append(deferredSqlStmts, sqlInfo)
-		} else if isAlreadyExists(err.Error()) {
-			// pg_dump generates `CREATE SCHEMA public;` in the schemas.sql. Because the `public`
-			// schema already exists on the target YB db, the create schema statement fails with
-			// "already exists" error. Ignore the error.
-			if bool(tconf.IgnoreIfExists) || strings.EqualFold(strings.Trim(sqlInfo.stmt, " \n"), "CREATE SCHEMA public;") {
-				err = nil
-			}
-		}
-		break // no more iteration in case of non retriable error
-	}
-	if err != nil {
-		if missingRequiredSchemaObject(err) {
-			// Do nothing
-		} else {
-			utils.PrintSqlStmtIfDDL(sqlInfo.stmt, utils.GetObjectFileName(filepath.Join(exportDir, "schema"), objType))
-			color.Red(fmt.Sprintf("%s\n", err.Error()))
-			if tconf.ContinueOnError {
-				log.Infof("appending stmt to failedSqlStmts list: %s\n", utils.GetSqlStmtToPrint(sqlInfo.stmt))
-				errString := "/*\n" + err.Error() + "\n*/\n"
-				failedSqlStmts = append(failedSqlStmts, errString+sqlInfo.formattedStmt)
-			} else {
-				utils.ErrExit("error: %s\n", err)
-			}
-		}
-	}
-	return err
-}
-
 // TODO: need automation tests for this, covering cases like schema(public vs non-public) or case sensitive names
 func beforeIndexCreation(sqlInfo sqlInfo, conn **pgx.Conn, objType string) error {
 	if !strings.Contains(strings.ToUpper(sqlInfo.stmt), "CREATE INDEX") {
@@ -1143,7 +1073,7 @@ func beforeIndexCreation(sqlInfo sqlInfo, conn **pgx.Conn, objType string) error
 		return fmt.Errorf("extract qualified index name from DDL [%v]: %w", sqlInfo.stmt, err)
 	}
 	if invalidTargetIndexesCache == nil {
-		invalidTargetIndexesCache, err = tdb.InvalidIndexes()
+		invalidTargetIndexesCache, err = getInvalidIndexes(conn)
 		if err != nil {
 			return fmt.Errorf("failed to fetch invalid indexes: %w", err)
 		}
@@ -1161,6 +1091,32 @@ func beforeIndexCreation(sqlInfo sqlInfo, conn **pgx.Conn, objType string) error
 	// print the index name as index creation takes time and user can see the progress
 	color.Yellow("creating index %s ...", fullyQualifiedObjName)
 	return nil
+}
+
+func getInvalidIndexes(conn **pgx.Conn) (map[string]bool, error) {
+	var result = make(map[string]bool)
+	// NOTE: this shouldn't fetch any predefined indexes of pg_catalog schema (assuming they can't be invalid) or indexes of other successful migrations
+	query := "SELECT indexrelid::regclass FROM pg_index WHERE indisvalid = false"
+
+	rows, err := (*conn).Query(context.Background(), query)
+	if err != nil {
+		return nil, fmt.Errorf("querying invalid indexes: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var fullyQualifiedIndexName string
+		err := rows.Scan(&fullyQualifiedIndexName)
+		if err != nil {
+			return nil, fmt.Errorf("scanning row for invalid index name: %w", err)
+		}
+		// if schema is not provided by catalog table, then it is public schema
+		if !strings.Contains(fullyQualifiedIndexName, ".") {
+			fullyQualifiedIndexName = fmt.Sprintf("public.%s", fullyQualifiedIndexName)
+		}
+		result[fullyQualifiedIndexName] = true
+	}
+	return result, nil
 }
 
 // TODO: This function is a duplicate of the one in tgtdb/yb.go. Consolidate the two.

@@ -1,0 +1,57 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL table-columns-count.csv
+SELECT schema_name, object_name, object_type, column_count
+FROM (
+    SELECT 
+        t.owner AS schema_name,
+        t.table_name AS object_name,
+        'table' AS object_type,
+        COUNT(*) AS column_count
+    FROM 
+        dba_tab_columns t
+    JOIN
+        dba_tables tab ON t.owner = tab.owner AND t.table_name = tab.table_name
+    WHERE 
+        t.owner = '&1'
+    GROUP BY 
+        t.owner, t.table_name
+    UNION ALL
+    SELECT
+        i.index_owner AS schema_name,
+        i.index_name AS object_name,
+        'index' AS object_type,
+        COUNT(*) AS column_count
+    FROM
+        dba_ind_columns i
+    JOIN
+        dba_indexes idx ON i.index_owner = idx.owner AND i.index_name = idx.index_name
+    WHERE
+        i.index_owner = '&1'
+        AND idx.index_type NOT IN ('CLUSTER', 'DOMAIN', 'BITMAP', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
+        AND i.index_name NOT IN (
+            SELECT index_name
+            FROM dba_constraints
+            WHERE owner = '&1'
+            AND constraint_type IN ('P', 'U')
+        )
+        AND i.index_name NOT LIKE 'SYS_%'
+        AND i.index_name NOT LIKE 'DR$%'
+    GROUP BY
+        i.index_owner, i.index_name
+);
+SPOOL OFF
+
+EXIT

@@ -1,0 +1,31 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL table-row-counts.csv
+SELECT schema_name, table_name, row_count
+FROM (
+    SELECT 
+        owner AS schema_name,
+        table_name,
+        0 AS row_count
+    FROM 
+        dba_tables
+    WHERE 
+        owner = '&1'
+        AND table_name NOT LIKE 'DR$%'
+        AND table_name NOT LIKE 'AQ$%'
+);
+SPOOL OFF
+
+EXIT;

@@ -119,13 +119,21 @@ ALTER CONVERSION myconv for  'UTF8' TO 'LATIN1' FROM myfunc1;
 --Reindexing not supported
 REINDEX TABLE my_table;
 
---Generated stored 
-CREATE TABLE newtable (
-	id UUID GENERATED ALWAYS AS gen_random_uuid() STORED,
-	org uuid NOT NULL,
-	name text,
-	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP UNIQUE(name, org)
+--Generated stored test cases with different datatype formats
+CREATE TABLE order_details (
+    detail_id integer NOT NULL,
+    quantity integer,
+    price_per_unit numeric,
+    amount numeric GENERATED ALWAYS AS (((quantity)::numeric * price_per_unit)) STORED
 );
+
+CREATE TABLE public.employees4 (
+    id integer NOT NULL,
+    first_name character varying(50) NOT NULL,
+    last_name character varying(50) NOT NULL,
+    full_name character varying(101) GENERATED ALWAYS AS ((((first_name)::text || ' '::text) || (last_name)::text)) STORED
+);
+
 --like cases
 CREATE TABLE table_xyz
   (LIKE xyz INCLUDING DEFAULTS INCLUDING CONSTRAINTS);

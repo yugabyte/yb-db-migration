@@ -54,6 +54,7 @@ type SourceDB interface {
 	ClearMigrationState(migrationUUID uuid.UUID, exportDir string) error
 	GetNonPKTables() ([]string, error)
 	ValidateTablesReadyForLiveMigration(tableList []sqlname.NameTuple) error
+	GetDatabaseSize() (int64, error)
 }
 
 func newSourceDB(source *Source) SourceDB {

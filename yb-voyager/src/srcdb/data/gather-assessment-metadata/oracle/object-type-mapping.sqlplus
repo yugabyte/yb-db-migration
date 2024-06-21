@@ -1,0 +1,63 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL object-type-mapping.csv
+SELECT schema_name, object_name, object_type
+FROM (
+    SELECT
+        owner AS schema_name,
+        -- TODO: handle the partitioned table support later
+        object_name || NVL2(subobject_name, '_' || subobject_name, '') AS object_name,
+        object_type
+    FROM
+        dba_objects
+    WHERE
+        owner = '&1'
+        AND object_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION', 'INDEX PARTITION')
+    UNION ALL
+    SELECT
+        owner AS schema_name,
+        index_name AS object_name,
+        index_type || ' INDEX' AS object_type
+    FROM
+        dba_indexes
+    WHERE
+        owner = '&1'
+        AND table_name NOT LIKE 'DR$%'
+        AND table_name NOT LIKE 'AQ$%'
+    UNION ALL
+    SELECT
+        owner AS schema_name,
+        type_name AS object_name,
+        'INHERITED TYPE' AS object_type
+    FROM
+        dba_types
+    WHERE
+        owner = '&1'
+        AND supertype_name IS NOT NULL
+    UNION ALL
+    SELECT
+        owner AS schema_name,
+        table_name || '.' || column_name AS object_name,
+        'VIRTUAL COLUMN' AS object_type
+    FROM
+        dba_tab_cols
+    WHERE
+        owner = '&1'
+        AND virtual_column = 'YES'
+        AND column_name NOT LIKE 'SYS_%'
+);
+SPOOL OFF
+
+EXIT

@@ -31,7 +31,6 @@ import (
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/srcdb"
-	"github.com/yugabyte/yb-voyager/yb-voyager/src/tgtdb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
@@ -56,7 +55,12 @@ var importSchemaCmd = &cobra.Command{
 
 	Run: func(cmd *cobra.Command, args []string) {
 		tconf.ImportMode = true
-		importSchema()
+		err := importSchema()
+		if err != nil {
+			packAndSendImportSchemaPayload(ERROR, err.Error())
+			utils.ErrExit("error in importing schema: %s", err)
+		}
+		packAndSendImportSchemaPayload(COMPLETE, "")
 	},
 }
 
@@ -73,19 +77,15 @@ var importObjectsInStraightOrder utils.BoolStr
 var flagRefreshMViews utils.BoolStr
 var invalidTargetIndexesCache map[string]bool
 
-func importSchema() {
+func importSchema() error {
 	err := retrieveMigrationUUID()
 	if err != nil {
-		utils.ErrExit("failed to get migration UUID: %w", err)
+		return fmt.Errorf("failed to get migration UUID: %w", err)
 	}
 	tconf.Schema = strings.ToLower(tconf.Schema)
 
-	if flagPostSnapshotImport {
-		tdb = tgtdb.NewTargetDB(&tconf)
-		err = tdb.Init()
-		if err != nil {
-			utils.ErrExit("failed to initialize the target DB: %s", err)
-		}
+	targetDBDetails = &callhome.TargetDBDetails{
+		Host: tconf.Host,
 	}
 
 	importSchemaStartEvent := createImportSchemaStartedEvent()
@@ -93,7 +93,7 @@ func importSchema() {
 
 	conn, err := pgx.Connect(context.Background(), tconf.GetConnectionUri())
 	if err != nil {
-		utils.ErrExit("Unable to connect to target YugabyteDB database: %v", err)
+		return fmt.Errorf("unable to connect to target YugabyteDB database: %v", err)
 	}
 	defer conn.Close(context.Background())
 
@@ -101,12 +101,10 @@ func importSchema() {
 	query := "SELECT setting FROM pg_settings WHERE name = 'server_version'"
 	err = conn.QueryRow(context.Background(), query).Scan(&targetDBVersion)
 	if err != nil {
-		utils.ErrExit("get target db version: %s", err)
+		return fmt.Errorf("get target db version: %s", err)
 	}
+	targetDBDetails.DBVersion = targetDBVersion
 	utils.PrintAndLog("YugabyteDB version: %s\n", targetDBVersion)
-
-	payload := callhome.GetPayload(exportDir, migrationUUID)
-	payload.TargetDBVersion = targetDBVersion
 
 	if !flagPostSnapshotImport {
 		filePath := filepath.Join(exportDir, "schema", "uncategorized.sql")
@@ -119,72 +117,76 @@ func importSchema() {
 	}
 
 	var objectList []string
-	objectsToImportAfterData := []string{"INDEX", "FTS_INDEX", "PARTITION_INDEX", "TRIGGER"}
-	if !flagPostSnapshotImport { // Pre data load.
-		// This list also has defined the order to create object type in target YugabyteDB.
+	// Pre data load.
+	// This list also has defined the order to create object type in target YugabyteDB.
+	// if post snapshot import, no objects should be imported.
+	if !flagPostSnapshotImport {
 		objectList = utils.GetSchemaObjectList(sourceDBType)
-		objectList = utils.SetDifference(objectList, objectsToImportAfterData)
 		if len(objectList) == 0 {
 			utils.ErrExit("No schema objects to import! Must import at least 1 of the supported schema object types: %v", utils.GetSchemaObjectList(sourceDBType))
-		} else {
-			assessmentDone, err := IsMigrationAssessmentDone()
-			if err != nil {
-				utils.ErrExit("failed to check if migration assessment done: %v", err)
+		}
+		assessmentDone, err := IsMigrationAssessmentDone()
+		if err != nil {
+			utils.ErrExit("failed to check if migration assessment done: %v", err)
+		}
+
+		if assessmentDone && !isYBDatabaseIsColocated(conn) && !utils.AskPrompt(fmt.Sprintf("\nWarning: Target DB '%s' is a non-colocated database, colocated tables can't be created in a non-colocated database.\n", tconf.DBName),
+			"Use a colocated database if your schema contains colocated tables. Do you still want to continue") {
+			utils.ErrExit("Exiting...")
+		}
+		objectList = applySchemaObjectFilterFlags(objectList)
+		log.Infof("list of schema objects to import: %v", objectList)
+		// Import some statements only after importing everything else
+		isSkipStatement := func(objType, stmt string) bool {
+			stmt = strings.ToUpper(strings.TrimSpace(stmt))
+			switch objType {
+			case "SEQUENCE":
+				// ALTER TABLE table_name ALTER COLUMN column_name ... ('sequence_name');
+				// ALTER SEQUENCE sequence_name OWNED BY table_name.column_name;
+				return strings.HasPrefix(stmt, "ALTER TABLE") || strings.HasPrefix(stmt, "ALTER SEQUENCE")
+			case "TABLE":
+				// skips the ALTER TABLE table_name ADD CONSTRAINT constraint_name FOREIGN KEY (column_name) REFERENCES another_table_name(another_column_name);
+				return strings.Contains(stmt, "ALTER TABLE") && strings.Contains(stmt, "FOREIGN KEY")
+			case "UNIQUE INDEX":
+				// skips all the INDEX DDLs, Except CREATE UNIQUE INDEX index_name ON table ... (column_name);
+				return !strings.Contains(stmt, objType)
+			case "INDEX":
+				// skips all the CREATE UNIQUE INDEX index_name ON table ... (column_name);
+				return strings.Contains(stmt, "UNIQUE INDEX")
 			}
-
-			if assessmentDone && !isYBDatabaseIsColocated(conn) && !utils.AskPrompt(fmt.Sprintf("\nWarning: Target DB '%s' is a non-colocated database, colocated tables can't be created in a non-colocated database.\n", tconf.DBName),
-				"Use a colocated database if your schema contains colocated tables. Do you still want to continue") {
-				utils.ErrExit("Exiting...")
-			}
+			return false
 		}
-	} else { // Post data load.
-		objectList = objectsToImportAfterData
-	}
-	objectList = applySchemaObjectFilterFlags(objectList)
-	log.Infof("list of schema objects to import: %v", objectList)
-	// Import some statements only after importing everything else
-	isSkipStatement := func(objType, stmt string) bool {
-		stmt = strings.ToUpper(strings.TrimSpace(stmt))
-		switch objType {
-		case "SEQUENCE":
-			// ALTER TABLE table_name ALTER COLUMN column_name ... ('sequence_name');
-			// ALTER SEQUENCE sequence_name OWNED BY table_name.column_name;
-			return strings.HasPrefix(stmt, "ALTER TABLE") || strings.HasPrefix(stmt, "ALTER SEQUENCE")
-		case "TABLE":
-			// skips the ALTER TABLE table_name ADD CONSTRAINT constraint_name FOREIGN KEY (column_name) REFERENCES another_table_name(another_column_name);
-			return strings.Contains(stmt, "ALTER TABLE") && strings.Contains(stmt, "FOREIGN KEY")
-		case "UNIQUE INDEX":
-			// skips all the INDEX DDLs, Except CREATE UNIQUE INDEX index_name ON table ... (column_name);
-			return !strings.Contains(stmt, objType)
-		case "INDEX":
-			// skips all the CREATE UNIQUE INDEX index_name ON table ... (column_name);
-			return strings.Contains(stmt, "UNIQUE INDEX")
+		skipFn := isSkipStatement
+		err = importSchemaInternal(exportDir, objectList, skipFn)
+    if err != nil {
+      return err
+    }
+
+		// Import the skipped ALTER TABLE statements from sequence.sql and table.sql if it exists
+		skipFn = func(objType, stmt string) bool {
+			return !isSkipStatement(objType, stmt)
 		}
-		return false
-	}
-	skipFn := isSkipStatement
-	importSchemaInternal(exportDir, objectList, skipFn)
+		if slices.Contains(objectList, "SEQUENCE") {
+      err = importSchemaInternal(exportDir, []string{"SEQUENCE"}, skipFn)
+      if err != nil {
+        return err
+      }
+    }
+    if slices.Contains(objectList, "TABLE") {
+      err = importSchemaInternal(exportDir, []string{"TABLE"}, skipFn)
+      if err != nil {
+        return err
+      }
+    }
 
-	// Import the skipped ALTER TABLE statements from sequence.sql and table.sql if it exists
-	skipFn = func(objType, stmt string) bool {
-		return !isSkipStatement(objType, stmt)
-	}
-	if slices.Contains(objectList, "SEQUENCE") {
-		importSchemaInternal(exportDir, []string{"SEQUENCE"}, skipFn)
-	}
-	if slices.Contains(objectList, "TABLE") {
-		importSchemaInternal(exportDir, []string{"TABLE"}, skipFn)
+		importDeferredStatements()
+		log.Info("Schema import is complete.")
+
+		dumpStatements(finalFailedSqlStmts, filepath.Join(exportDir, "schema", "failed.sql"))
 	}
 
-	importDeferredStatements()
-	log.Info("Schema import is complete.")
-
-	dumpStatements(failedSqlStmts, filepath.Join(exportDir, "schema", "failed.sql"))
-
-	if flagPostSnapshotImport {
-		if flagRefreshMViews {
-			refreshMViews(conn)
-		}
+	if flagPostSnapshotImport && flagRefreshMViews {
+		refreshMViews(conn)
 	} else {
 		utils.PrintAndLog("\nNOTE: Materialized Views are not populated by default. To populate them, pass --refresh-mviews while executing `import schema --post-snapshot-import`.")
 	}
@@ -192,7 +194,48 @@ func importSchema() {
 	importSchemaCompleteEvent := createImportSchemaCompletedEvent()
 	controlPlane.ImportSchemaCompleted(&importSchemaCompleteEvent)
 
-	callhome.PackAndSendPayload(exportDir)
+	return nil
+}
+
+func packAndSendImportSchemaPayload(status string, errMsg string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	//Basic details in the payload
+	payload := createCallhomePayload()
+	payload.MigrationPhase = IMPORT_SCHEMA_PHASE
+	payload.Status = status
+	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
+
+	//Handling the error cases in import schema with/without continue-on-error
+	var errorsList []string
+	//e.g for finalFailedSqlStmts - [`/*\nERROR: changing primary key of a partitioned table is not yet implemented (SQLSTATE XX000)*/\n
+	//	ALTER TABLE ONLY public.customers\n ADD CONSTRAINT customers_pkey PRIMARY KEY (id, statuses, arr);`]
+	for _, stmt := range finalFailedSqlStmts {
+		//parts - ["/*\nERROR: changing primary key of a partitioned table is not yet implemented (SQLSTATE XX000)" "ALTER TABLE ONLY public.customers\n ADD CONSTRAINT customers_pkey PRIMARY KEY (id, statuses, arr);"]
+		parts := strings.Split(stmt, "*/\n")
+		errorsList = append(errorsList, strings.Trim(parts[0], "/*\n")) //trimming the prefix of `/*\n` from parts[0] (the error msg)
+	}
+	if status == ERROR {
+		errorsList = append(errorsList, errMsg)
+	} else {
+		if len(errorsList) > 0 {
+			payload.Status = COMPLETE_WITH_ERRORS
+		}
+	}
+
+	//import-schema specific payload details
+	importSchemaPayload := callhome.ImportSchemaPhasePayload{
+		ContinueOnError:    bool(tconf.ContinueOnError),
+		Errors:             errorsList,
+		PostSnapshotImport: bool(flagPostSnapshotImport),
+		StartClean:         bool(startClean),
+	}
+	payload.PhasePayload = callhome.MarshalledJsonString(importSchemaPayload)
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
 }
 
 func isYBDatabaseIsColocated(conn *pgx.Conn) bool {

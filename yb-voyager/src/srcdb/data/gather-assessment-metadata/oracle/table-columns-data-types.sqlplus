@@ -1,0 +1,34 @@
+SET ECHO OFF
+SET FEEDBACK OFF
+SET HEADING ON
+SET MARKUP CSV ON DELIMITER , QUOTE OFF
+SET PAGESIZE 0
+SET TRIMSPOOL ON
+SET TERMOUT OFF
+SET VERIFY OFF
+
+-- Exit on SQL errors or OS errors
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Select the data into the CSV file using inline views
+SPOOL table-columns-data-types.csv
+SELECT schema_name, table_name, column_name, data_type
+FROM (
+    SELECT
+        t.owner AS schema_name,
+        t.table_name,
+        column_name,
+        data_type
+    FROM
+        dba_tab_columns t
+    JOIN
+        dba_tables tab ON t.owner = tab.owner AND t.table_name = tab.table_name
+    WHERE
+        t.owner = '&1'
+        AND t.table_name NOT LIKE 'DR$%'
+        AND t.table_name NOT LIKE 'AQ$%'
+);
+SPOOL OFF
+
+EXIT

@@ -4,7 +4,7 @@ import yb
 
 def main():
 	yb.run_checks(migration_completed_checks)
-
+	yb.run_checks(YB_specific_checks)
 
 #=============================================================================
 
@@ -14,6 +14,8 @@ EXPECTED_ROW_COUNT = {
 	'top_down_simple': 12
 }
 
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt)
 
 def migration_completed_checks(tgt):
 	table_list = tgt.get_table_names("public")

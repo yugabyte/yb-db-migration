@@ -89,7 +89,7 @@ type DBObject struct {
 	ObjectType   string `json:"ObjectType"`
 	TotalCount   int    `json:"TotalCount"`
 	InvalidCount int    `json:"InvalidCount,omitempty"`
-	ObjectNames  string `json:"ObjectNames"`
+	ObjectNames  string `json:"ObjectNames,omitempty"`
 	Details      string `json:"Details,omitempty"`
 }
 

@@ -247,7 +247,7 @@ func registerImportSchemaFlags(cmd *cobra.Command) {
 	BoolVar(cmd.Flags(), &importObjectsInStraightOrder, "straight-order", false,
 		"Imports the schema objects in the order specified via the --object-type-list flag (default false)")
 	BoolVar(cmd.Flags(), &flagPostSnapshotImport, "post-snapshot-import", false,
-		"Imports indexes and triggers in the target YugabyteDB after data import is complete. This argument assumes that data import is already done and imports only indexes and triggers in the YugabyteDB database.")
+		"Perform schema related tasks on target YugabyteDB after data import is complete. Use --refresh-mviews along with this flag to refresh materialized views.")
 	BoolVar(cmd.Flags(), &tconf.IgnoreIfExists, "ignore-exist", false,
 		"ignore errors if object already exists (default false)")
 	BoolVar(cmd.Flags(), &flagRefreshMViews, "refresh-mviews", false,

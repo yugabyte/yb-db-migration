@@ -12,16 +12,16 @@
             },
             {
                 "ObjectType": "EXTENSION",
-                "TotalCount": 6,
+                "TotalCount": 7,
                 "InvalidCount": 3,
-                "ObjectNames": "aws_commons, plperl, hstore, hstore_plperl, pg_visibility, hll",
+                "ObjectNames": "aws_commons, plperl, hstore, hstore_plperl, pg_visibility, hll, \"uuid-ossp\"",
                 "Details": "'hll' extension is supported in YugabyteDB v2.18 onwards. Please verify this extension as per the target YugabyteDB version."
             },
             {
                 "ObjectType": "TABLE",
-                "TotalCount": 24,
-                "InvalidCount": 21,
-                "ObjectNames": "sales, test_2, test_7, test_8, table_abc, table_1, test_interval, sales_data, test_6, newtable, table_test, xyz, anydata_test, anytype_test, salaries2, test_3, uritype_test, test_1, test_non_pk_multi_column_list, test_4, test_5, test_9, table_xyz, anydataset_test"
+                "TotalCount": 25,
+                "InvalidCount": 22,
+                "ObjectNames": "sales, test_2, test_7, test_8, table_abc, table_1, test_interval, sales_data, test_6, order_details, public.employees4, table_test, xyz, anydata_test, anytype_test, salaries2, test_3, uritype_test, test_1, test_non_pk_multi_column_list, test_4, test_5, test_9, table_xyz, anydataset_test"
             },
             {
                 "ObjectType": "INDEX",
@@ -38,9 +38,9 @@
             },
             {
                 "ObjectType": "VIEW",
-                "TotalCount": 2,
-                "InvalidCount": 2,
-                "ObjectNames": "v1, test"
+                "TotalCount": 3,
+                "InvalidCount": 3,
+                "ObjectNames": "v1, v2, test"
             },
             {
                 "ObjectType": "TRIGGER",

@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+
+import yb
+
+def main():
+	yb.run_checks(migration_completed_checks)
+
+
+# =============================================================================
+
+
+EXPECTED_INDEX_COUNT = {
+	'members': 4
+}
+
+
+def migration_completed_checks(tgt):
+	table_list = tgt.get_table_names("public")
+	print("table_list:", table_list)
+	assert len(table_list) == 1
+
+	get_index_cnt = tgt.get_count_index_on_table("public")
+	for table_name, index_count in EXPECTED_INDEX_COUNT.items():
+		print(f"table_name: {table_name}, index_count: {get_index_cnt[table_name]}")
+		assert index_count == get_index_cnt[table_name]
+
+
+if __name__ == "__main__":
+	main()

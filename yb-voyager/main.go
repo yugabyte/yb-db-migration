@@ -21,9 +21,10 @@ import (
 	"syscall"
 
 	"github.com/tebeka/atexit"
+	"golang.org/x/term"
+
 	"github.com/yugabyte/yb-voyager/yb-voyager/cmd"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
-	"golang.org/x/term"
 )
 
 var originalTermState *term.State
@@ -32,6 +33,7 @@ func main() {
 	captureTerminalState()
 
 	registerSignalHandlers()
+	atexit.Register(cmd.PackAndSendCallhomePayloadOnExit)
 	atexit.Register(cmd.CleanupChildProcesses)
 	cmd.Execute()
 	cmd.PrintElapsedDuration()

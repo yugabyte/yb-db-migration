@@ -31,6 +31,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/namereg"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils/sqlname"
@@ -236,6 +237,16 @@ func (pg *TargetPostgreSQL) InitConnPool() error {
 	}
 	pg.connPool = NewConnectionPool(params)
 	return nil
+}
+
+func (pg *TargetPostgreSQL) GetCallhomeTargetDBInfo() *callhome.TargetDBDetails {
+	totalCores, _ := fetchCores([]*TargetConf{pg.tconf})
+	return &callhome.TargetDBDetails{
+		Host:      pg.tconf.Host,
+		NodeCount: 1,
+		Cores:     totalCores,
+		DBVersion: pg.GetVersion(),
+	}
 }
 
 func (pg *TargetPostgreSQL) CreateVoyagerSchema() error {
@@ -721,10 +732,6 @@ func (pg *TargetPostgreSQL) isQueryResultNonEmpty(query string) bool {
 	defer rows.Close()
 
 	return rows.Next()
-}
-
-func (pg *TargetPostgreSQL) InvalidIndexes() (map[string]bool, error) {
-	return nil, nil
 }
 
 func (pg *TargetPostgreSQL) ClearMigrationState(migrationUUID uuid.UUID, exportDir string) error {

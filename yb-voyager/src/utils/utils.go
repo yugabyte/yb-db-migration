@@ -17,9 +17,7 @@ package utils
 
 import (
 	"bufio"
-	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
@@ -36,7 +34,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
-	"github.com/yosssi/gohtml"
 	"golang.org/x/exp/slices"
 )
 
@@ -218,18 +215,6 @@ func GetObjectNameListFromReport(report SchemaReport, objType string) []string {
 	}
 	sort.Strings(objectList)
 	return objectList
-}
-
-func PrettifyHtmlString(htmlStr string) string {
-	return gohtml.Format(htmlStr)
-}
-
-func PrettifyJsonString(jsonStr string) string {
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, []byte(jsonStr), "", "    "); err != nil {
-		panic(err)
-	}
-	return prettyJSON.String()
 }
 
 func GetObjectDirPath(schemaDirPath string, objType string) string {
@@ -587,4 +572,11 @@ func BytesToGB(sizeInBytes float64) float64 {
 		return 0
 	}
 	return sizeInGB
+}
+
+func SafeDereferenceInt64(ptr *int64) int64 {
+	if ptr != nil {
+		return *ptr
+	}
+	return 0
 }
