@@ -1,4 +1,4 @@
--- contains Types, Domains, Comments, Mixed Cases
+-- contains Types, Domains, Comments, Mixed Cases, WITH clause examples
 
 DROP type IF EXISTS enum_kind cascade; 
 
@@ -155,3 +155,90 @@ insert into "Case_Sensitive_Columns" ("user", "Last_Name", email, gender, ip_add
 \d "Case_Sensitive_Columns"
 
 select * from "Case_Sensitive_Columns";
+
+
+-- Different cases with the WITH clause in the tables
+
+-- Table name and column name is "WITH"
+
+CREATE TABLE "WITH" (
+    id SERIAL PRIMARY KEY,
+    "WITH" VARCHAR(100)  /* Column name is "WITH" */
+)
+WITH (
+    FILLFACTOR = 75,  /* Fill factor set to 75% */
+    autovacuum_enabled = TRUE,  /* Enable autovacuum */
+    autovacuum_analyze_scale_factor = 0.05  /* Scale factor for analyze */
+);
+
+-- Insert statements for the "WITH" table
+INSERT INTO "WITH" ("WITH") VALUES ('Value 1');
+INSERT INTO "WITH" ("WITH") VALUES ('Value 2');
+INSERT INTO "WITH" ("WITH") VALUES ('Value 3');
+
+
+-- WITH clause in comments variation 1
+
+CREATE TABLE with_example1 (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) -- WITH()
+)
+/* 
+WITH (
+    FILLFACTOR = 80,  -- Active fill factor setting
+    autovacuum_enabled = TRUE,  -- Autovacuum enabled
+    autovacuum_vacuum_scale_factor = 0.1,   -- Scale factor for vacuum
+    autovacuum_freeze_min_age = 10000000  -- Min age for freeze
+    -- These settings are commented out and will not be applied
+)
+*/
+WITH (
+    FILLFACTOR = 80,  /* Fill factor: 70% 
+                         Special characters: {}, (), [], @, # */
+    autovacuum_enabled = TRUE,  /* Autovacuum enabled */
+    autovacuum_vacuum_scale_factor = 0.1,  /* Scale factor for vacuum */
+    autovacuum_freeze_min_age = 10000000  /* Min age for freeze */
+    /* Multiline
+       Comment
+    */
+);
+
+-- Insert statements for the with_example1 table
+INSERT INTO with_example1 (name) VALUES ('John Doe');
+INSERT INTO with_example1 (name) VALUES ('Jane Smith');
+INSERT INTO with_example1 (name) VALUES ('Alice Johnson');
+
+
+-- WITH clause in comments variation 2
+
+CREATE TABLE with_example2 (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) /*
+    WITH()
+    */
+)
+WITH (
+    FILLFACTOR = 80,  /* Fill factor: 70% 
+                         Special characters: {}, (), [], @, # */
+    autovacuum_enabled = TRUE,  /* Autovacuum enabled */
+    autovacuum_vacuum_scale_factor = 0.1,  /* Scale factor for vacuum */
+    autovacuum_freeze_min_age = 10000000  /* Min age for freeze */
+    -- Comment at the end of the block
+)
+/* 
+WITH (
+    FILLFACTOR = 80,  -- Active fill factor setting
+    autovacuum_enabled = TRUE,  -- Autovacuum enabled
+    autovacuum_vacuum_scale_factor = 0.1,   -- Scale factor for vacuum
+    autovacuum_freeze_min_age = 10000000,  -- Min age for freeze
+)
+*/
+;
+
+-- Insert statements for the with_example2 table
+INSERT INTO with_example2 (name) VALUES ('Michael Brown');
+INSERT INTO with_example2 (name) VALUES ('Emily Davis');
+INSERT INTO with_example2 (name) VALUES ('William Wilson');
+
+
+

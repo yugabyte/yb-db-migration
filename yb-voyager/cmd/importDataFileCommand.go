@@ -26,6 +26,7 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/datafile"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/datastore"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
@@ -78,6 +79,7 @@ var importDataFileCmd = &cobra.Command{
 		if err != nil {
 			utils.ErrExit("Failed to initialize the target DB: %s", err)
 		}
+		targetDBDetails = tdb.GetCallhomeTargetDBInfo()
 		err = InitNameRegistry(exportDir, importerRole, nil, nil, &tconf, tdb, bool(startClean))
 		if err != nil {
 			utils.ErrExit("initialize name registry: %v", err)
@@ -90,6 +92,7 @@ var importDataFileCmd = &cobra.Command{
 		importFileTasks := prepareImportFileTasks()
 		prepareForImportDataCmd(importFileTasks)
 		importData(importFileTasks)
+		packAndSendImportDataFilePayload(COMPLETE)
 
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {
@@ -320,6 +323,58 @@ func checkAndParseEscapeAndQuoteChar() {
 
 	log.Infof("escapeChar: %s, quoteChar: %s", escapeChar, quoteChar)
 
+}
+
+func packAndSendImportDataFilePayload(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationType = BULK_DATA_LOAD
+	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
+	payload.MigrationPhase = IMPORT_DATA_FILE_PHASE
+	dataFileParameters := callhome.DataFileParameters{
+		FileFormat: fileFormat,
+		HasHeader:  bool(hasHeader),
+		Delimiter:  delimiter,
+		EscapeChar: escapeChar,
+		QuoteChar:  quoteChar,
+		NullString: nullString,
+	}
+	importDataFilePayload := callhome.ImportDataFilePhasePayload{
+		ParallelJobs:       int64(tconf.Parallelism),
+		StartClean:         bool(startClean),
+		DataFileParameters: callhome.MarshalledJsonString(dataFileParameters),
+	}
+	switch true {
+	case strings.Contains(dataDir, "s3://"):
+		importDataFilePayload.FileStorageType = AWS_S3
+	case strings.Contains(dataDir, "gs://"):
+		importDataFilePayload.FileStorageType = GCS_BUCKETS
+	case strings.Contains(dataDir, "https://"):
+		importDataFilePayload.FileStorageType = AZURE_BLOBS
+	default:
+		importDataFilePayload.FileStorageType = LOCAL_DISK
+	}
+	importSizeMap, err := getImportedSizeMap()
+	if err != nil {
+		log.Errorf("callhome: error in getting the import data: %v", err)
+	} else if importSizeMap != nil {
+		importSizeMap.IterKV(func(key sqlname.NameTuple, value int64) (bool, error) {
+			importDataFilePayload.TotalSize += value
+			if value > importDataFilePayload.LargestTableSize {
+				importDataFilePayload.LargestTableSize = value
+			}
+			return true, nil
+		})
+	}
+	payload.PhasePayload = callhome.MarshalledJsonString(importDataFilePayload)
+	payload.Status = status
+
+	err = callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
 }
 
 func setDefaultForNullString() {

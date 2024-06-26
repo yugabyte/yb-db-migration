@@ -11,11 +11,11 @@ ARGS_LINUX=$@
 VERSION="latest"
 
 # This needs to be changed to the latest debezium release tag
-VOYAGER_RELEASE_TAG=${VOYAGER_RELEASE_TAG:-"v1.7.0"}
-DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-1.7.0"}
+VOYAGER_RELEASE_TAG=${VOYAGER_RELEASE_TAG:-"v1.7.1"}
+DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-1.7.1"}
 
-# the hash corresponds to the yb-voyager/v1.7.0 tag
-YB_VOYAGER_GIT_HASH="3fcc7396dd78fe187a5861c92c006b274b111771" 
+# the hash corresponds to the yb-voyager/v1.7.1 tag
+YB_VOYAGER_GIT_HASH="bf206d6640e85daafabcc0344cd4d599b9f024ea" 
 
 
 ONLY_PG="false"

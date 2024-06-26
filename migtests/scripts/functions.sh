@@ -232,8 +232,6 @@ run_sqlplus() {
 export_schema() {
 	args="--export-dir ${EXPORT_DIR}
 		--source-db-type ${SOURCE_DB_TYPE}
-		--source-db-host ${SOURCE_DB_HOST}
-		--source-db-port ${SOURCE_DB_PORT}
 		--source-db-user ${SOURCE_DB_USER}
 		--source-db-password ${SOURCE_DB_PASSWORD}
 		--source-db-name ${SOURCE_DB_NAME}
@@ -243,6 +241,12 @@ export_schema() {
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
 	then
 		args="${args} --source-db-schema ${SOURCE_DB_SCHEMA}"
+	fi
+	if [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" != "" ]
+	then
+		args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
+	else
+		args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
 	fi
 	if [ "${SOURCE_DB_SSL_MODE}" != "" ]
 	then
@@ -282,12 +286,19 @@ export_data() {
 	then
 		args="${args} --table-list ${TABLE_LIST}"
 	fi
+	if [ "${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}" != "" ]
+	then
+	    args="${args} --oracle-cdb-tns-alias ${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}"
+	fi
 
 	if [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" != "" ]
 	then
-		args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
-	else
-		args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
+	    args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
+	fi
+
+	if [ "${SOURCE_DB_ORACLE_CDB_TNS_ALIAS}" = "" ] && [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" = "" ]
+	then
+	    args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
 	fi
 
 	if [ "${SOURCE_DB_SCHEMA}" != "" ]
@@ -418,8 +429,7 @@ import_data() {
 import_data_to_source_replica() {
 	args="
 	--export-dir ${EXPORT_DIR}
-	--source-replica-db-user ${SOURCE_REPLICA_DB_USER}
-	--source-replica-db-host ${SOURCE_REPLICA_DB_HOST} 
+	--source-replica-db-user ${SOURCE_REPLICA_DB_USER} 
 	--source-replica-db-name ${SOURCE_REPLICA_DB_NAME} 
 	--source-replica-db-password ${SOURCE_REPLICA_DB_PASSWORD} 
 	--start-clean true
@@ -431,6 +441,12 @@ import_data_to_source_replica() {
 	if [ "${SOURCE_REPLICA_DB_SCHEMA}" != "" ]
 	then
 		args="${args} --source-replica-db-schema ${SOURCE_REPLICA_DB_SCHEMA}"
+	fi
+	if [ "${SOURCE_REPLICA_DB_ORACLE_TNS_ALIAS}" != "" ]
+	then
+		args="${args} --oracle-tns-alias ${SOURCE_REPLICA_DB_ORACLE_TNS_ALIAS}"
+	else
+		args="${args} --source-replica-db-host ${SOURCE_REPLICA_DB_HOST}"
 	fi
 	yb-voyager import data to source-replica ${args} $*
 }
@@ -563,6 +579,17 @@ cat_log_file() {
 	else
 		echo "No ${log_file_name} found."
 	fi	
+}
+
+cat_file() {
+	file_path=$1
+	if [ -f "$file_path" ]
+	then
+		echo "Printing ${file_path} file"
+		cat "$file_path"
+	else
+		echo "No $file_path found."
+	fi
 }
 
 kill_process() {
@@ -708,4 +735,64 @@ validate_failure_reasoning() {
     fi
 }
 
+post_assess_migration() {
+    json_file="$EXPORT_DIR/assessment/reports/assessmentReport.json"
+    sharded_tables=$(fetch_sharded_tables "$json_file")
+    echo "Sharded Tables: $sharded_tables"
+    colocated_tables=$(fetch_colocated_tables "$json_file")
+    echo "Colocated Tables: $colocated_tables"
 
+    move_tables "$json_file" 30
+
+    updated_sharded_tables=$(fetch_sharded_tables "$json_file")
+    echo "Updated Sharded Tables: $updated_sharded_tables"
+    updated_colocated_tables=$(fetch_colocated_tables "$json_file")
+    echo "Updated Colocated Tables: $updated_colocated_tables"
+}
+
+fetch_sharded_tables() {
+    local json_file=$1
+    jq '.Sizing.SizingRecommendation.ShardedTables // []' "$json_file"
+}
+
+fetch_colocated_tables() {
+    local json_file=$1
+    jq '.Sizing.SizingRecommendation.ColocatedTables // []' "$json_file"
+}
+
+# Function to move a specified percentage of tables from colocated to sharded
+move_tables() {
+    local json_file=$1
+    local percentage=$2
+
+    local total_tables=$(jq '[.Sizing.SizingRecommendation.ShardedTables // [], .Sizing.SizingRecommendation.ColocatedTables // []] | flatten | length' "$json_file")
+    local sharded_tables_count=$(jq '.Sizing.SizingRecommendation.ShardedTables | length // 0' "$json_file")
+    local target_sharded_tables=$((total_tables * percentage / 100))
+
+    if [ "$sharded_tables_count" -ge "$target_sharded_tables" ]; then
+        echo "Sharded tables are already 30% or more of the total tables. No need to move tables."
+        return
+    fi
+
+    local tables_to_move=$((target_sharded_tables - sharded_tables_count))
+
+    if [ "$tables_to_move" -le 0 ]; then
+        echo "No tables need to be moved."
+        return
+    fi
+
+    echo "Moving $tables_to_move tables from colocated to sharded."
+
+    colocated_tables=$(fetch_colocated_tables "$json_file")
+    # Select random tables to move
+    new_sharded_tables=$(echo "$colocated_tables" | jq --argjson count "$tables_to_move" 'to_entries | .[:$count] | map(.value) | flatten')
+    remaining_colocated_tables=$(echo "$colocated_tables" | jq --argjson new_sharded "$new_sharded_tables" '. - $new_sharded')
+
+    # Convert arrays to JSON
+    new_sharded_tables_json=$(echo "$new_sharded_tables" | jq -s 'flatten')
+    remaining_colocated_tables_json=$(echo "$remaining_colocated_tables" | jq -s 'flatten')
+
+    # Update the JSON file with the new lists of sharded and colocated tables
+    jq --indent 4 --argjson new_sharded_tables "$new_sharded_tables_json" --argjson remaining_colocated_tables "$remaining_colocated_tables_json" \
+       '.Sizing.SizingRecommendation.ShardedTables += $new_sharded_tables | .Sizing.SizingRecommendation.ColocatedTables = $remaining_colocated_tables' "$json_file" > tmp.json && mv tmp.json "$json_file"
+}

@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 
@@ -601,6 +602,49 @@ func (s *ImportDataState) GetImportedEventsStatsForTable(tableNameTup sqlname.Na
 	}
 	log.Infof("import stats for table %s: %v", tableNameTup, eventCounter)
 	return &eventCounter, nil
+}
+
+func (s *ImportDataState) GetImportedEventsStatsForTableList(tableNameTupList []sqlname.NameTuple, migrationUUID uuid.UUID) (*utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter], error) {
+	tablesToEventCounter := utils.NewStructMap[sqlname.NameTuple, *tgtdb.EventCounter]()
+	//in case import streaming is not started yet, metadata will not be initialized so initialising the tuples with empty counters
+	for _, ntup := range tableNameTupList {
+		dummyCounter := tgtdb.EventCounter{
+			NumInserts: 0,
+			NumUpdates: 0,
+			NumDeletes: 0,
+		}
+		tablesToEventCounter.Put(ntup, &dummyCounter)
+	}
+
+	tableListQuery := strings.Join(lo.Map(tableNameTupList, func(tup sqlname.NameTuple, _ int) string {
+		return tup.ForKey()
+	}), "','") // format table1','table2','table3
+	query := fmt.Sprintf(`SELECT table_name, SUM(total_events), SUM(num_inserts), SUM(num_updates), SUM(num_deletes) FROM %s 
+		WHERE migration_uuid='%s' GROUP BY table_name HAVING table_name in ('%s')`, EVENTS_PER_TABLE_METADATA_TABLE_NAME, migrationUUID, tableListQuery)
+	log.Infof("query to get import stats for tables '%s': %s", tableListQuery, query)
+	rows, err := tdb.Query(query)
+	if err != nil {
+		log.Errorf("error in getting import stats from target db: %v", err)
+		return nil, fmt.Errorf("error in getting import stats from target db: %w", err)
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var eventCounter tgtdb.EventCounter
+		var tableName string
+		err = rows.Scan(&tableName, &eventCounter.TotalEvents,
+			&eventCounter.NumInserts, &eventCounter.NumUpdates, &eventCounter.NumDeletes)
+		if err != nil {
+			return nil, fmt.Errorf("get imported events stats for table %q: %w", tableName, err)
+		}
+		tableNameTup, err := namereg.NameReg.LookupTableName(tableName)
+		if err != nil {
+			return nil, fmt.Errorf("error in lookup in namreg: %v", err)
+		}
+		tablesToEventCounter.Put(tableNameTup, &eventCounter)
+	}
+
+	return tablesToEventCounter, nil
 }
 
 //============================================================================

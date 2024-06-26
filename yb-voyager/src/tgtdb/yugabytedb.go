@@ -36,6 +36,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/namereg"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils/sqlname"
@@ -684,8 +685,8 @@ func (yb *TargetYugabyteDB) ExecuteBatch(migrationUUID uuid.UUID, batch *EventBa
 
 func logDiscrepancyInEventBatchIfAny(batch *EventBatch, rowsAffectedInserts, rowsAffectedDeletes, rowsAffectedUpdates int64) {
 	if !(rowsAffectedInserts == batch.EventCounts.NumInserts &&
-		rowsAffectedInserts == batch.EventCounts.NumDeletes &&
-		rowsAffectedInserts == batch.EventCounts.NumUpdates) {
+		rowsAffectedDeletes == batch.EventCounts.NumDeletes &&
+		rowsAffectedUpdates == batch.EventCounts.NumUpdates) {
 		var vsns []int64
 		for _, e := range batch.Events {
 			vsns = append(vsns, e.Vsn)
@@ -819,6 +820,17 @@ func getCloneConnectionUri(clone *TargetConf) string {
 	return cloneConnectionUri
 }
 
+func (yb *TargetYugabyteDB) GetCallhomeTargetDBInfo() *callhome.TargetDBDetails {
+	targetConfs := yb.getYBServers()
+	totalCores, _ := fetchCores(targetConfs) // no need to handle error in case we couldn't fine cores
+	return &callhome.TargetDBDetails{
+		Host:      yb.tconf.Host,
+		NodeCount: len(targetConfs),
+		Cores:     totalCores,
+		DBVersion: yb.GetVersion(),
+	}
+}
+
 func isSeedTargetHost(tconf *TargetConf, names ...string) bool {
 	var allIPs []string
 	for _, name := range names {
@@ -858,15 +870,15 @@ func testAndFilterYbServers(tconfs []*TargetConf) []*TargetConf {
 	return availableTargets
 }
 
-func fetchDefaultParallelJobs(tconfs []*TargetConf, defaultParallelismFactor int) int {
-	totalCores := 0
+func fetchCores(tconfs []*TargetConf) (int, error) {
 	targetCores := 0
+	totalCores := 0
 	for _, tconf := range tconfs {
 		log.Infof("Determining CPU core count on: %s", utils.GetRedactedURLs([]string{tconf.Uri})[0])
 		conn, err := pgx.Connect(context.Background(), tconf.Uri)
 		if err != nil {
 			log.Warnf("Unable to reach target while querying cores: %v", err)
-			return len(tconfs) * defaultParallelismFactor
+			return 0, err
 		}
 		defer conn.Close(context.Background())
 
@@ -874,22 +886,32 @@ func fetchDefaultParallelJobs(tconfs []*TargetConf, defaultParallelismFactor int
 		_, err = conn.Exec(context.Background(), cmd)
 		if err != nil {
 			log.Warnf("Unable to create tables on target DB: %v", err)
-			return len(tconfs) * defaultParallelismFactor
+			return 0, err
 		}
 
 		cmd = "COPY yb_voyager_cores(num_cores) FROM PROGRAM 'grep processor /proc/cpuinfo|wc -l';"
 		_, err = conn.Exec(context.Background(), cmd)
 		if err != nil {
 			log.Warnf("Error while running query %s on host %s: %v", cmd, utils.GetRedactedURLs([]string{tconf.Uri}), err)
-			return len(tconfs) * defaultParallelismFactor
+			return 0, err
 		}
 
 		cmd = "SELECT num_cores FROM yb_voyager_cores;"
 		if err = conn.QueryRow(context.Background(), cmd).Scan(&targetCores); err != nil {
 			log.Warnf("Error while running query %s: %v", cmd, err)
-			return len(tconfs) * defaultParallelismFactor
+			return 0, err
 		}
 		totalCores += targetCores
+	}
+	return totalCores, nil
+}
+
+func fetchDefaultParallelJobs(tconfs []*TargetConf, defaultParallelismFactor int) int {
+	totalCores, err := fetchCores(tconfs)
+	if err != nil {
+		defaultParallelJobs := len(tconfs) * defaultParallelismFactor
+		log.Errorf("error while fetching the cores information and using default parallelism: %v : %v ", defaultParallelJobs, err)
+		return defaultParallelJobs
 	}
 	if totalCores == 0 { //if target is running on MacOS, we are unable to determine totalCores
 		return 3
@@ -1140,31 +1162,6 @@ func (yb *TargetYugabyteDB) isQueryResultNonEmpty(query string) bool {
 	defer rows.Close()
 
 	return rows.Next()
-}
-
-func (yb *TargetYugabyteDB) InvalidIndexes() (map[string]bool, error) {
-	var result = make(map[string]bool)
-	// NOTE: this shouldn't fetch any predefined indexes of pg_catalog schema (assuming they can't be invalid) or indexes of other successful migrations
-	query := "SELECT indexrelid::regclass FROM pg_index WHERE indisvalid = false"
-	rows, err := yb.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("querying invalid indexes: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var fullyQualifiedIndexName string
-		err := rows.Scan(&fullyQualifiedIndexName)
-		if err != nil {
-			return nil, fmt.Errorf("scanning row for invalid index name: %w", err)
-		}
-		// if schema is not provided by catalog table, then it is public schema
-		if !strings.Contains(fullyQualifiedIndexName, ".") {
-			fullyQualifiedIndexName = fmt.Sprintf("public.%s", fullyQualifiedIndexName)
-		}
-		result[fullyQualifiedIndexName] = true
-	}
-	return result, nil
 }
 
 func (yb *TargetYugabyteDB) ClearMigrationState(migrationUUID uuid.UUID, exportDir string) error {

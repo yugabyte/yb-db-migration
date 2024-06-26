@@ -20,6 +20,9 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
+
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
@@ -107,4 +110,45 @@ func initSourceConfFromTargetConf() error {
 	source.SSLQueryString = targetConf.SSLQueryString
 	source.Uri = targetConf.Uri
 	return nil
+}
+
+func packAndSendExportDataFromTargetPayload(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationType = LIVE_MIGRATION
+
+	targetDBDetails := callhome.TargetDBDetails{
+		Host:      source.Host,
+		DBVersion: source.DBVersion,
+	}
+	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
+
+	payload.MigrationPhase = EXPORT_DATA_FROM_TARGET_PHASE
+	exportDataPayload := callhome.ExportDataPhasePayload{
+		ParallelJobs: int64(source.NumConnections),
+		StartClean:   bool(startClean),
+	}
+
+	exportDataPayload.Phase = exportPhase
+	if exportPhase != dbzm.MODE_SNAPSHOT {
+		exportDataPayload.TotalExportedEvents = totalEventCount
+		exportDataPayload.EventsExportRate = throughputInLast3Min
+	}
+	switch exporterRole {
+	case TARGET_DB_EXPORTER_FF_ROLE:
+		exportDataPayload.LiveWorkflowType = FALL_FORWARD
+	case TARGET_DB_EXPORTER_FB_ROLE:
+		exportDataPayload.LiveWorkflowType = FALL_BACK
+	}
+
+	payload.PhasePayload = callhome.MarshalledJsonString(exportDataPayload)
+	payload.Status = status
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
+
 }

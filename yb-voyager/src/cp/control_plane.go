@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 

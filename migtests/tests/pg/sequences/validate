@@ -3,8 +3,8 @@
 import yb
 
 def main():
-	yb.run_checks(migration_completed_checks)
-
+    yb.run_checks(migration_completed_checks)
+    yb.run_checks(YB_specific_checks)
 
 #=============================================================================
 
@@ -96,6 +96,9 @@ NUM_SEQUENCES = {
     'schema3': 1,
     'schema4': 0
 }
+
+def YB_specific_checks(tgt):
+    yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks_per_schema(tgt, schema):
     print("check for schema: ", schema)

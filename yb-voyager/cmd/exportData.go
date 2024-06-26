@@ -49,6 +49,7 @@ import (
 )
 
 var exporterRole string = SOURCE_DB_EXPORTER_ROLE
+var exportPhase string
 
 var exportDataCmd = &cobra.Command{
 	Use: "data",
@@ -127,21 +128,76 @@ func exportDataCommandFn(cmd *cobra.Command, args []string) {
 
 	success := exportData()
 	if success {
-		tableRowCount := getExportedRowCountSnapshot(exportDir)
-		callhome.GetPayload(exportDir, migrationUUID)
-		callhome.UpdateDataStats(exportDir, tableRowCount)
-		callhome.PackAndSendPayload(exportDir)
+		sendPayloadAsPerExporterRole(COMPLETE)
 
 		setDataIsExported()
-		color.Green("Export of data complete \u2705")
+		color.Green("Export of data complete")
 		log.Info("Export of data completed.")
 		startFallBackSetupIfRequired()
 	} else if ProcessShutdownRequested {
 		log.Info("Shutting down as SIGINT/SIGTERM received.")
 	} else {
-		color.Red("Export of data failed! Check %s/logs for more details. \u274C", exportDir)
+		color.Red("Export of data failed! Check %s/logs for more details.", exportDir)
 		log.Error("Export of data failed.")
+		sendPayloadAsPerExporterRole(ERROR)
 		atexit.Exit(1)
+	}
+}
+
+func sendPayloadAsPerExporterRole(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	switch exporterRole {
+	case SOURCE_DB_EXPORTER_ROLE:
+		packAndSendExportDataPayload(status)
+	case TARGET_DB_EXPORTER_FB_ROLE, TARGET_DB_EXPORTER_FF_ROLE:
+		packAndSendExportDataFromTargetPayload(status)
+	}
+}
+
+func packAndSendExportDataPayload(status string) {
+
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+
+	switch exportType {
+	case SNAPSHOT_ONLY:
+		payload.MigrationType = OFFLINE
+	case SNAPSHOT_AND_CHANGES:
+		payload.MigrationType = LIVE_MIGRATION
+	}
+	sourceDBDetails := callhome.SourceDBDetails{
+		Host:      source.Host,
+		DBType:    source.DBType,
+		DBVersion: source.DBVersion,
+		DBSize:    source.DBSize,
+	}
+
+	payload.SourceDBDetails = callhome.MarshalledJsonString(sourceDBDetails)
+
+	payload.MigrationPhase = EXPORT_DATA_PHASE
+	exportDataPayload := callhome.ExportDataPhasePayload{
+		ParallelJobs: int64(source.NumConnections),
+		StartClean:   bool(startClean),
+	}
+
+	updateExportSnapshotDataStatsInPayload(&exportDataPayload)
+
+	exportDataPayload.Phase = exportPhase
+	if exportPhase != dbzm.MODE_SNAPSHOT {
+		exportDataPayload.TotalExportedEvents = totalEventCount
+		exportDataPayload.EventsExportRate = throughputInLast3Min
+	}
+
+	payload.PhasePayload = callhome.MarshalledJsonString(exportDataPayload)
+	payload.Status = status
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
 	}
 }
 
@@ -149,6 +205,11 @@ func exportData() bool {
 	err := source.DB().Connect()
 	if err != nil {
 		utils.ErrExit("Failed to connect to the source db: %s", err)
+	}
+	source.DBVersion = source.DB().GetVersion()
+	source.DBSize, err = source.DB().GetDatabaseSize()
+	if err != nil {
+		log.Errorf("error getting database size: %v", err) //can just log as this is used for call-home only
 	}
 	defer source.DB().Disconnect()
 	clearMigrationStateIfRequired()
@@ -232,7 +293,9 @@ func exportData() bool {
 	utils.PrintAndLog("table list for data export: %v", tableListToDisplay)
 
 	//finalTableList is with leaf partitions and root tables after this in the whole export flow to make all the catalog queries work fine
+
 	if changeStreamingIsEnabled(exportType) || useDebezium {
+		exportPhase = dbzm.MODE_SNAPSHOT
 		config, tableNametoApproxRowCountMap, err := prepareDebeziumConfig(partitionsToRootTableMap, finalTableList, tablesColumnList, leafPartitions)
 		if err != nil {
 			log.Errorf("Failed to prepare dbzm config: %v", err)
@@ -307,11 +370,15 @@ func exportData() bool {
 			if err != nil {
 				utils.ErrExit("failed to create trigger file after data export: %v", err)
 			}
+
+			updateCallhomeExportPhase()
+
 			utils.PrintAndLog("\nRun the following command to get the current report of the migration:\n" +
 				color.CyanString("yb-voyager get data-migration-report --export-dir %q\n", exportDir))
 		}
 		return true
 	} else {
+		exportPhase = dbzm.MODE_SNAPSHOT
 		err = storeTableListInMSR(finalTableList)
 		if err != nil {
 			utils.ErrExit("store table list in MSR: %v", err)
@@ -323,6 +390,21 @@ func exportData() bool {
 		}
 		return true
 	}
+}
+
+func updateCallhomeExportPhase() {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	switch exporterRole {
+	case SOURCE_DB_EXPORTER_ROLE:
+		exportPhase = CUTOVER_TO_TARGET
+	case TARGET_DB_EXPORTER_FF_ROLE:
+		exportPhase = CUTOVER_TO_SOURCE_REPLICA
+	case TARGET_DB_EXPORTER_FB_ROLE:
+		exportPhase = CUTOVER_TO_SOURCE
+	}
+
 }
 
 // required only for postgresql/yugabytedb since GetAllTables() returns all tables and partitions
@@ -813,11 +895,6 @@ func clearMigrationStateIfRequired() {
 		err = metadb.TruncateTablesInMetaDb(exportDir, []string{metadb.QUEUE_SEGMENT_META_TABLE_NAME, metadb.EXPORTED_EVENTS_STATS_TABLE_NAME, metadb.EXPORTED_EVENTS_STATS_PER_TABLE_TABLE_NAME})
 		if err != nil {
 			utils.ErrExit("Failed to truncate tables in metadb: %s", err)
-		}
-		//For dropping VOYAGER_LOG_MINING_FLUSH_{migrationUUID} table in oracle on start-clean
-		err = source.DB().ClearMigrationState(migrationUUID, exportDir)
-		if err != nil {
-			utils.ErrExit("failed to clear migration state: %s", err)
 		}
 	} else {
 		if !utils.IsDirectoryEmpty(exportDataDir) {

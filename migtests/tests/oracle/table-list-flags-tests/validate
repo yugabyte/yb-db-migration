@@ -4,6 +4,10 @@ import yb
 
 def main():
 	yb.run_checks(migration_completed_checks)
+	yb.run_checks(YB_specific_checks)
+
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt, "oracle")
 
 EXPECTED_ROW_COUNT = {
  	'test_timezone': 1,

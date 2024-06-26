@@ -131,7 +131,11 @@ func getSnapshotExportStatusRow(tableStatus *dbzm.TableExportStatus) *exportTabl
 		Status:        "DONE",
 		ExportedCount: tableStatus.ExportedRowCountSnapshot,
 	}
-	if tableStatus.Sno == InProgressTableSno && dbzm.IsLiveMigrationInSnapshotMode(exportDir) {
+	isSnapshot, err := dbzm.IsLiveMigrationInSnapshotMode(exportDir)
+	if err != nil {
+		utils.ErrExit("failed to read the status of live migration: %v", err)
+	}
+	if tableStatus.Sno == InProgressTableSno && isSnapshot {
 		row.Status = "EXPORTING"
 	}
 	return row

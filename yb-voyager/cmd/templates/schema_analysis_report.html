@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Migration Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #EFEFEF;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        h2, h3 {
+            text-align: left;
+            margin-top: 40px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .summary-footer {
+            font-weight: bold;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Database Migration Report</h1>
+
+    <div class="section">
+        <h3>Database Information</h3>
+        <table>
+            <tr><th>Database Name</th><td>{{ .SchemaSummary.DBName }}</td></tr>
+            <tr><th>Schema Name(s)</th><td>{{ join .SchemaSummary.SchemaNames ", " }}</td></tr>
+            <tr><th>DB Version</th><td>{{ .SchemaSummary.DBVersion }}</td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Schema Summary</h3>
+        <table width='100%' table-layout='fixed'>
+            <tr><th>Object</th><th>Total Count</th><th>Valid Count</th><th>Invalid Count</th><th width='40%'>Object Names</th><th width='30%'>Details</th></tr>
+            {{ range .SchemaSummary.DBObjects }}
+            {{ if .TotalCount }}
+            <tr>
+                <th>{{ .ObjectType }}</th>
+                <td style='text-align: center;'>{{ .TotalCount }}</td>
+                <td style='text-align: center;'>{{ sub .TotalCount .InvalidCount }}</td>
+                <td style='text-align: center;'>{{ .InvalidCount }}</td>
+                <td width='40%'>{{ .ObjectNames }}</td>
+                <td width='30%'>{{ .Details }}</td>
+            </tr>
+            {{ end }}
+            {{ end }}
+            <tr class="summary-footer">
+                <td></td>
+                <td style='text-align: center;'>{{ sumDbObjects .SchemaSummary.DBObjects "TotalCount" }}</td>
+                <td style='text-align: center;'>{{ sumDbObjects .SchemaSummary.DBObjects "ValidCount" }}</td>
+                <td style='text-align: center;'>{{ sumDbObjects .SchemaSummary.DBObjects "InvalidCount" }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Issues</h3>
+        <ol class="issue-list">
+            {{ range $index, $issue := .Issues }}
+            <li class="issue-item">
+                <h4>Issue in Object {{ $issue.ObjectType }}</h4>
+                <ul>
+                    <li><strong>Object Name:</strong> {{ $issue.ObjectName }}</li>
+                    <li><strong>Reason:</strong> {{ $issue.Reason }}</li>
+                    <li><strong>SQL Statement:</strong> {{ $issue.SqlStatement }}</li>
+                    <li><strong>File Path:</strong> {{ $issue.FilePath }}<a href='{{ $issue.FilePath }}'> [Preview]</a></li>
+                    {{ if $issue.Suggestion }}
+                    <li><strong>Suggestion:</strong> {{ $issue.Suggestion }}</li>
+                    {{ end }}
+                    {{ if $issue.GH }}
+                    <li><strong>Github Issue Link:</strong> <a href='{{ $issue.GH }}'>{{ $issue.GH }}</a></li>
+                    {{ end }}
+                </ul>
+            </li>
+            {{ end }}
+        </ol>
+    </div>
+
+
+    {{ if .SchemaSummary.Notes }}
+    <div class="section">
+        <h3>Notes</h3>
+        <ul list-style-type='disc'>
+            {{ range .SchemaSummary.Notes }}
+            <li>{{ . }}</li>
+            {{ end }}
+        </ul>
+    </div>
+    {{ end }}
+</body>
+</html>

@@ -54,6 +54,7 @@ type Source struct {
 	UseOrafce                utils.BoolStr `json:"use_orafce"`
 	CommentsOnObjects        utils.BoolStr `json:"comments_on_objects"`
 	DBVersion                string        `json:"db_version"`
+	DBSize                   int64         `json:"db_size"`
 	StrExportObjectTypeList  string        `json:"str_export_object_type_list"`
 	StrExcludeObjectTypeList string        `json:"str_exclude_object_type_list"`
 

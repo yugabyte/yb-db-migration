@@ -10,6 +10,7 @@ fi
 
 set -x
 
+export YB_VOYAGER_SEND_DIAGNOSTICS=false
 export TEST_NAME=$1
 
 export REPO_ROOT="${PWD}"
@@ -60,8 +61,11 @@ main() {
 	yb-voyager version
 
 	step "Assess Migration"
-	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
-		assess_migration
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" == "oracle" ]; then
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
 
 		step "Validate Assessment Reports"
 		# Checking if the assessment reports were created
@@ -74,6 +78,8 @@ main() {
 			cat_log_file "yb-voyager-assess-migration.log"
 			exit 1
 		fi
+
+		post_assess_migration
 	fi
 
 	step "Export schema."
@@ -115,7 +121,7 @@ main() {
 
 	step "Create target database."
 	run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
-	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" = "oracle" ]; then
 		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME} with COLOCATION=TRUE"
 	else
 		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME}"
@@ -129,6 +135,12 @@ main() {
 	step "Import schema."
 	import_schema
 	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi
 
 	step "Import data."
 	import_data

@@ -56,7 +56,41 @@ const (
 	ROW_UPDATE_STATUS_NOT_STARTED   = 0
 	ROW_UPDATE_STATUS_IN_PROGRESS   = 1
 	ROW_UPDATE_STATUS_COMPLETED     = 3
-	COLOCATION_CLAUSE				= "colocation"
+	COLOCATION_CLAUSE               = "colocation"
+	EASY                            = "EASY"
+	MEDIUM                          = "MEDIUM"
+	HARD                            = "HARD"
+	//phase names used in call-home payload
+	ANALYZE_PHASE                    = "analyze-schema"
+	EXPORT_SCHEMA_PHASE              = "export-schema"
+	EXPORT_DATA_PHASE                = "export-data"
+	EXPORT_DATA_FROM_TARGET_PHASE    = "export-data-from-target"
+	IMPORT_SCHEMA_PHASE              = "import-schema"
+	IMPORT_DATA_PHASE                = "import-data"
+	IMPORT_DATA_SOURCE_REPLICA_PHASE = "import-data-to-source-repilca"
+	IMPORT_DATA_SOURCE_PHASE         = "import-data-to-source"
+	END_MIGRATION_PHASE              = "end-migration"
+	ASSESS_MIGRATION_PHASE           = "assess-migration"
+	IMPORT_DATA_FILE_PHASE           = "import-data-file"
+	//...more phases
+	OFFLINE        = "offline"
+	LIVE_MIGRATION = "live-migration"
+	BULK_DATA_LOAD = "bulk-data-load-from-flat-files"
+	FALL_BACK      = "fall-back"
+	FALL_FORWARD   = "fall-forward"
+	AWS_S3         = "aws-s3"
+	GCS_BUCKETS    = "gcs-buckets"
+	AZURE_BLOBS    = "azure-blob-storage"
+	LOCAL_DISK     = "local-disk"
+	//status
+	ERROR                     = "ERROR"
+	EXIT                      = "EXIT"
+	COMPLETE                  = "COMPLETE"
+	COMPLETE_WITH_ERRORS      = "COMPLETE-WITH-ERRORS"
+	INPROGRESS                = "IN-PROGRESS"
+	CUTOVER_TO_TARGET         = "cutover-to-target"
+	CUTOVER_TO_SOURCE         = "cutover-to-source"
+	CUTOVER_TO_SOURCE_REPLICA = "cutover-to-source-replica"
 )
 
 var supportedSourceDBTypes = []string{ORACLE, MYSQL, POSTGRESQL, YUGABYTEDB}

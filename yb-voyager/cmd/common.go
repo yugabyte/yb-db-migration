@@ -16,7 +16,10 @@ limitations under the License.
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +43,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/term"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/datafile"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
@@ -384,7 +388,7 @@ func displayImportedRowCountSnapshot(state *ImportDataState, tasks []*ImportFile
 			snapshotRowCount.Put(tableName, tableRowCount)
 		}
 	} else {
-		snapshotRowCount, err = getImportedSnapshotRowsMap(dbType, tableList)
+		snapshotRowCount, err = getImportedSnapshotRowsMap(dbType)
 		if err != nil {
 			utils.ErrExit("failed to get imported snapshot rows map: %v", err)
 		}
@@ -478,7 +482,7 @@ func initAssessmentDB() {
 		utils.ErrExit("error creating and initializing assessment DB: %v", err)
 	}
 
-	assessmentDB, err = migassessment.NewAssessmentDB()
+	assessmentDB, err = migassessment.NewAssessmentDB(source.DBType)
 	if err != nil {
 		utils.ErrExit("error creating assessment DB instance: %v", err)
 	}
@@ -882,7 +886,7 @@ func getExportedSnapshotRowsMap(exportSnapshotStatus *ExportSnapshotStatus) (*ut
 	return snapshotRowsMap, snapshotStatusMap, nil
 }
 
-func getImportedSnapshotRowsMap(dbType string, tableList []sqlname.NameTuple) (*utils.StructMap[sqlname.NameTuple, int64], error) {
+func getImportedSnapshotRowsMap(dbType string) (*utils.StructMap[sqlname.NameTuple, int64], error) {
 	switch dbType {
 	case "target":
 		importerRole = TARGET_DB_IMPORTER_ROLE
@@ -899,12 +903,14 @@ func getImportedSnapshotRowsMap(dbType string, tableList []sqlname.NameTuple) (*
 
 	snapshotRowsMap := utils.NewStructMap[sqlname.NameTuple, int64]()
 	dataFilePathNtMap := map[string]sqlname.NameTuple{}
-	for _, fileEntry := range snapshotDataFileDescriptor.DataFileList {
-		nt, err := namereg.NameReg.LookupTableName(fileEntry.TableName)
-		if err != nil {
-			return nil, fmt.Errorf("lookup table name from data file descriptor %s : %v", fileEntry.TableName, err)
+	if snapshotDataFileDescriptor != nil {
+		for _, fileEntry := range snapshotDataFileDescriptor.DataFileList {
+			nt, err := namereg.NameReg.LookupTableName(fileEntry.TableName)
+			if err != nil {
+				return nil, fmt.Errorf("lookup table name from data file descriptor %s : %v", fileEntry.TableName, err)
+			}
+			dataFilePathNtMap[fileEntry.FilePath] = nt
 		}
-		dataFilePathNtMap[fileEntry.FilePath] = nt
 	}
 
 	for dataFilePath, nt := range dataFilePathNtMap {
@@ -914,6 +920,30 @@ func getImportedSnapshotRowsMap(dbType string, tableList []sqlname.NameTuple) (*
 		}
 		existingRows, _ := snapshotRowsMap.Get(nt)
 		snapshotRowsMap.Put(nt, existingRows+snapshotRowCount)
+	}
+	return snapshotRowsMap, nil
+}
+
+
+func getImportedSizeMap() (*utils.StructMap[sqlname.NameTuple, int64], error) { //used for import data file case right now
+	importerRole = IMPORT_FILE_ROLE
+	state := NewImportDataState(exportDir)
+	dataFileDescriptor, err := prepareDummyDescriptor(state)
+	if err != nil {
+		return nil, fmt.Errorf("prepare dummy descriptor: %w", err)
+	}
+	snapshotRowsMap := utils.NewStructMap[sqlname.NameTuple, int64]()
+	for _, fileEntry := range dataFileDescriptor.DataFileList {
+		nt, err := namereg.NameReg.LookupTableName(fileEntry.TableName)
+		if err != nil {
+			return nil, fmt.Errorf("lookup table name from data file descriptor %s : %v", fileEntry.TableName, err)
+		}
+		byteCount, err := state.GetImportedByteCount(fileEntry.FilePath, nt)
+		if err != nil {
+			return nil, fmt.Errorf("could not fetch snapshot row count for table %q: %w", nt, err)
+		}
+		exisitingByteCount, _ := snapshotRowsMap.Get(nt)
+		snapshotRowsMap.Put(nt, exisitingByteCount+byteCount)
 	}
 	return snapshotRowsMap, nil
 }
@@ -949,6 +979,30 @@ type AssessmentReport struct {
 	UnsupportedFeatures  []UnsupportedFeature                  `json:"UnsupportedFeatures"`
 	TableIndexStats      *[]migassessment.TableIndexStats      `json:"TableIndexStats"`
 }
+
+// =============== for yugabyted controlplane ==============//
+// TODO: see if this can be accommodated in controlplane pkg, facing pkg cyclic dependency issue
+type AssessMigrationPayload struct {
+	AssessmentJsonReport  AssessmentReport
+	MigrationComplexity   string
+	SourceSizeDetails     SourceDBSizeDetails
+	TargetRecommendations TargetSizingRecommendations
+	ConversionIssues      []utils.Issue
+}
+
+type SourceDBSizeDetails struct {
+	TotalDBSize        int64
+	TotalTableSize     int64
+	TotalIndexSize     int64
+	TotalTableRowCount int64
+}
+
+type TargetSizingRecommendations struct {
+	TotalColocatedSize int64
+	TotalShardedSize   int64
+}
+
+//==========================================//
 
 func ParseJSONToAssessmentReport(reportPath string) (*AssessmentReport, error) {
 	var report AssessmentReport
@@ -988,4 +1042,120 @@ func (ar *AssessmentReport) GetClusterSizingRecommendation() string {
 	return fmt.Sprintf("Num Nodes: %f, vCPU per instance: %d, Memory per instance: %d, Estimated Import Time: %f minutes",
 		ar.Sizing.SizingRecommendation.NumNodes, ar.Sizing.SizingRecommendation.VCPUsPerInstance,
 		ar.Sizing.SizingRecommendation.MemoryPerInstance, ar.Sizing.SizingRecommendation.EstimatedTimeInMinForImport)
+}
+
+// ==========================================================================
+
+func createCallhomePayload() callhome.Payload {
+	var payload callhome.Payload
+	payload.MigrationUUID = migrationUUID
+	payload.PhaseStartTime = startTime.UTC().Format("2006-01-02T15:04:05.999999")
+	payload.YBVoyagerVersion = utils.YB_VOYAGER_VERSION
+	payload.TimeTakenSec = int(math.Ceil(time.Since(startTime).Seconds()))
+	payload.CollectedAt = time.Now().UTC().Format("2006-01-02T15:04:05.999999")
+
+	return payload
+}
+
+func PackAndSendCallhomePayloadOnExit() {
+	if callHomeErrorOrCompletePayloadSent {
+		return
+	}
+	switch currentCommand {
+	case assessMigrationCmd.CommandPath():
+		packAndSendAssessMigrationPayload(EXIT, "Exiting....")
+	case exportSchemaCmd.CommandPath():
+		packAndSendExportSchemaPayload(EXIT)
+	case analyzeSchemaCmd.CommandPath():
+		packAndSendAnalyzeSchemaPayload(EXIT)
+	case importSchemaCmd.CommandPath():
+		packAndSendImportSchemaPayload(EXIT, "Exiting....")
+	case exportDataCmd.CommandPath(), exportDataFromSrcCmd.CommandPath():
+		packAndSendExportDataPayload(EXIT)
+	case exportDataFromTargetCmd.CommandPath():
+		packAndSendExportDataFromTargetPayload(EXIT)
+	case importDataCmd.CommandPath(), importDataToTargetCmd.CommandPath():
+		packAndSendImportDataPayload(EXIT)
+	case importDataToSourceCmd.CommandPath():
+		packAndSendImportDataToSourcePayload(EXIT)
+	case importDataToSourceReplicaCmd.CommandPath():
+		packAndSendImportDataToSrcReplicaPayload(EXIT)
+	case endMigrationCmd.CommandPath():
+		packAndSendEndMigrationPayload(EXIT)
+	case importDataFileCmd.CommandPath():
+		packAndSendImportDataFilePayload(EXIT)
+	}
+}
+
+func updateExportSnapshotDataStatsInPayload(exportDataPayload *callhome.ExportDataPhasePayload) {
+	//Updating the payload with totalRows and LargestTableRows for both debezium/non-debezium case
+	if !useDebezium || (changeStreamingIsEnabled(exportType) && source.DBType == POSTGRESQL) { 
+		//non-debezium and pg live migration snapshot case reading the export_snapshot_status.json file
+		if exportSnapshotStatusFile != nil {
+			exportStatusSnapshot, err := exportSnapshotStatusFile.Read()
+			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) {
+					log.Errorf("callhome: failed to read export status file: %v", err)
+				}
+			} else {
+				exportedSnapshotRow, _, err := getExportedSnapshotRowsMap(exportStatusSnapshot)
+				if err != nil {
+					log.Errorf("callhome: error while getting exported snapshot rows map: %v", err)
+				}
+				exportedSnapshotRow.IterKV(func(key sqlname.NameTuple, value int64) (bool, error) {
+					exportDataPayload.TotalRows += value
+					if value >= exportDataPayload.LargestTableRows {
+						exportDataPayload.LargestTableRows = value
+					}
+					return true, nil
+				})
+			}
+		}
+		switch source.DBType {
+		case POSTGRESQL:
+			exportDataPayload.ExportSnapshotMechanism = "pg_dump"
+		case ORACLE, MYSQL:
+			exportDataPayload.ExportSnapshotMechanism = "ora2pg"
+		}
+	} else {
+		//debezium case reading export_status.json file
+		exportStatusFilePath := filepath.Join(exportDir, "data", "export_status.json")
+		dbzmStatus, err := dbzm.ReadExportStatus(exportStatusFilePath)
+		if err != nil {
+			log.Errorf("callhome: error in reading export status: %v", err)
+		}
+		if dbzmStatus != nil {
+			for _, tableExportStatus := range dbzmStatus.Tables {
+				exportDataPayload.TotalRows += tableExportStatus.ExportedRowCountSnapshot
+				if tableExportStatus.ExportedRowCountSnapshot > exportDataPayload.LargestTableRows {
+					exportDataPayload.LargestTableRows = tableExportStatus.ExportedRowCountSnapshot
+				}
+			}
+		}
+		exportDataPayload.ExportSnapshotMechanism = "debezium"
+	}
+}
+
+func sendCallhomePayloadAtIntervals() {
+	for {
+		if callHomeErrorOrCompletePayloadSent {
+			//for just that corner case if there is some timing clash where complete and in-progress payload are sent together
+			break
+		}
+		time.Sleep(15 * time.Minute)
+		switch currentCommand {
+		case exportDataCmd.CommandPath(), exportDataFromSrcCmd.CommandPath():
+			packAndSendExportDataPayload(INPROGRESS)
+		case exportDataFromTargetCmd.CommandPath():
+			packAndSendExportDataFromTargetPayload(INPROGRESS)
+		case importDataCmd.CommandPath(), importDataToTargetCmd.CommandPath():
+			packAndSendImportDataPayload(INPROGRESS)
+		case importDataToSourceCmd.CommandPath():
+			packAndSendImportDataToSourcePayload(INPROGRESS)
+		case importDataToSourceReplicaCmd.CommandPath():
+			packAndSendImportDataToSrcReplicaPayload(INPROGRESS)
+		case importDataFileCmd.CommandPath():
+			packAndSendImportDataFilePayload(INPROGRESS)
+		}
+	}
 }

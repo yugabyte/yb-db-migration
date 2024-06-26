@@ -22,10 +22,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"time"
+	"reflect"
+	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
@@ -33,35 +34,154 @@ import (
 
 // call-home json formats
 var (
-	jsonFilePath    string
-	Payload         payload
 	SendDiagnostics utils.BoolStr
 )
 
-const (
+var (
 	CALL_HOME_SERVICE_HOST = "34.105.39.253"
 	CALL_HOME_SERVICE_PORT = 80
 )
 
-type payload struct {
-	MigrationUuid         uuid.UUID `json:"UUID"`
-	StartTime             string    `json:"start_time"`
-	YBVoyagerVersion      string    `json:"yb_voyager_version"`
-	LastUpdatedTime       string    `json:"last_updated_time"`
-	SourceDBType          string    `json:"source_db_type"`
-	SourceDBVersion       string    `json:"source_db_version"`
-	Issues                string    `json:"issues"`
-	DBObjects             string    `json:"database_objects"`
-	TargetDBVersion       string    `json:"target_db_version"`
-	NodeCount             int       `json:"node_count"`
-	ParallelJobs          int       `json:"parallel_jobs"`
-	TotalRows             int64     `json:"total_rows"`
-	TotalSize             int64     `json:"total_size"`
-	LargestTableRows      int64     `json:"largest_table_rows"`
-	LargestTableSize      int64     `json:"largest_table_size"`
-	TargetClusterLocation string    `json:"target_cluster_location"` //TODO
-	TargetDBCores         int       `json:"target_db_cores"`         //TODO
-	SourceCloudDBType     string    `json:"source_cloud_type"`       //TODO
+/*
+Call-home diagnostics table structure -
+CREATE TABLE diagnostics (
+
+	migration_uuid UUID,
+	phase_start_time TIMESTAMP WITH TIME ZONE,
+	collected_at TIMESTAMP WITH TIME ZONE,
+	source_db_details JSONB,
+	target_db_details JSONB,
+	yb_voyager_version TEXT,
+	migration_phase TEXT,
+	phase_payload JSONB,
+	migration_type TEXT,
+	time_taken_sec int,
+	status TEXT,
+	host_ip character varying 255 -- set by the callhome service
+	PRIMARY KEY (migration_uuid, migration_phase, collected_at)
+
+);
+*/
+type Payload struct {
+	MigrationUUID    uuid.UUID `json:"migration_uuid"`
+	PhaseStartTime   string    `json:"phase_start_time"`
+	CollectedAt      string    `json:"collected_at"`
+	SourceDBDetails  string    `json:"source_db_details"`
+	TargetDBDetails  string    `json:"target_db_details"`
+	YBVoyagerVersion string    `json:"yb_voyager_version"`
+	MigrationPhase   string    `json:"migration_phase"`
+	PhasePayload     string    `json:"phase_payload"`
+	MigrationType    string    `json:"migration_type"`
+	TimeTakenSec     int       `json:"time_taken_sec"`
+	Status           string    `json:"status"`
+}
+
+type SourceDBDetails struct {
+	Host      string `json:"host"`
+	DBType    string `json:"db_type"`
+	DBVersion string `json:"db_version"`
+	DBSize    int64  `json:"total_db_size_bytes"` //bytes
+	Role      string `json:"role,omitempty"`      //for differentiating replica details
+}
+
+type TargetDBDetails struct {
+	Host      string `json:"host"`
+	DBVersion string `json:"db_version"`
+	NodeCount int    `json:"node_count"`
+	Cores     int    `json:"total_cores"`
+}
+
+type AssessMigrationPhasePayload struct {
+	UnsupportedFeatures  string `json:"unsupported_features"`
+	UnsupportedDataTypes string `json:"unsupported_datatypes"`
+	Error                string `json:"error,omitempty"`
+	TableSizingStats     string `json:"table_sizing_stats"`
+	IndexSizingStats     string `json:"index_sizing_stats"`
+	SchemaSummary        string `json:"schema_summary"`
+	SourceConnectivity   bool   `json:"source_connectivity"`
+}
+
+type ObjectSizingStats struct {
+	SchemaName      string `json:"schema_name"`
+	ObjectName      string `json:"object_name"`
+	ReadsPerSecond  int64  `json:"reads_per_second"`
+	WritesPerSecond int64  `json:"writes_per_second"`
+	SizeInBytes     int64  `json:"size_in_bytes"`
+}
+
+type ExportSchemaPhasePayload struct {
+	StartClean             bool `json:"start_clean"`
+	AppliedRecommendations bool `json:"applied_recommendations"`
+}
+
+type AnalyzePhasePayload struct {
+	Issues          string `json:"issues"`
+	DatabaseObjects string `json:"database_objects"`
+}
+type ExportDataPhasePayload struct {
+	ParallelJobs            int64  `json:"parallel_jobs"`
+	TotalRows               int64  `json:"total_rows_exported"`
+	LargestTableRows        int64  `json:"largest_table_rows_exported"`
+	StartClean              bool   `json:"start_clean"`
+	ExportSnapshotMechanism string `json:"export_snapshot_mechanism,omitempty"`
+	//TODO: see if these three can be changed to not use omitempty to put the data for 0 rate or total events
+	Phase               string `json:"phase,omitempty"`
+	TotalExportedEvents int64  `json:"total_exported_events,omitempty"`
+	EventsExportRate    int64  `json:"events_export_rate_3m,omitempty"`
+	LiveWorkflowType    string `json:"live_workflow_type,omitempty"`
+}
+
+type ImportSchemaPhasePayload struct {
+	ContinueOnError    bool     `json:"continue_on_error"`
+	Errors             []string `json:"errors"`
+	PostSnapshotImport bool     `json:"post_snapshot_import"`
+	StartClean         bool     `json:"start_clean"`
+}
+
+type ImportDataPhasePayload struct {
+	ParallelJobs     int64 `json:"parallel_jobs"`
+	TotalRows        int64 `json:"total_rows_imported"`
+	LargestTableRows int64 `json:"largest_table_rows_imported"`
+	StartClean       bool  `json:"start_clean"`
+	//TODO: see if these three can be changed to not use omitempty to put the data for 0 rate or total events
+	Phase               string `json:"phase,omitempty"`
+	TotalImportedEvents int64  `json:"total_imported_events,omitempty"`
+	EventsImportRate    int64  `json:"events_import_rate_3m,omitempty"`
+	LiveWorkflowType    string `json:"live_workflow_type,omitempty"`
+}
+
+type ImportDataFilePhasePayload struct {
+	ParallelJobs       int64  `json:"parallel_jobs"`
+	TotalSize          int64  `json:"total_size_imported"`
+	LargestTableSize   int64  `json:"largest_table_size_imported"`
+	FileStorageType    string `json:"file_storage_type"`
+	StartClean         bool   `json:"start_clean"`
+	DataFileParameters string `json:"data_file_parameters"`
+}
+
+type DataFileParameters struct {
+	FileFormat string `json:"FileFormat"`
+	Delimiter  string `json:"Delimiter"`
+	HasHeader  bool   `json:"HasHeader"`
+	QuoteChar  string `json:"QuoteChar,omitempty"`
+	EscapeChar string `json:"EscapeChar,omitempty"`
+	NullString string `json:"NullString,omitempty"`
+}
+
+type EndMigrationPhasePayload struct {
+	BackupLogFiles       bool `json:"backup_log_files"`
+	BackupDataFiles      bool `json:"backup_data_files"`
+	BackupSchemaFiles    bool `json:"backup_schema_files"`
+	SaveMigrationReports bool `json:"save_migration_reports"`
+}
+
+func MarshalledJsonString[T any](value T) string {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		log.Errorf("callhome: error in parsing %v: %v", reflect.TypeOf(value).Name(), err)
+		return ""
+	}
+	return string(bytes)
 }
 
 // [For development] Read ENV VARS for value of SendDiagnostics
@@ -74,73 +194,33 @@ func ReadEnvSendDiagnostics() {
 	}
 }
 
-// Fill in primary-key based fields, if needed
-func initJSON(exportdir string, migrationUUID uuid.UUID) {
-	jsonFilePath = filepath.Join(exportdir, "metainfo", "diagnostics.json")
-	file, err := os.OpenFile(jsonFilePath, os.O_RDWR|os.O_CREATE, 0644)
-	file.Close()
-	if err != nil {
-		log.Errorf("Error while creating/opening diagnostics.json file: %v", err)
-		return
-	}
-	jsonBuf, err := os.ReadFile(jsonFilePath)
-	if err != nil {
-		log.Errorf("Error while reading diagnostics.json file: %v", err)
-		return
-	}
+func readCallHomeServiceEnv() {
+	host := os.Getenv("LOCAL_CALL_HOME_SERVICE_HOST")
+	port := os.Getenv("LOCAL_CALL_HOME_SERVICE_PORT")
+	CALL_HOME_SERVICE_HOST = lo.Ternary(host != "", host, CALL_HOME_SERVICE_HOST)
 
-	if len(jsonBuf) != 0 {
-		err = json.Unmarshal(jsonBuf, &Payload)
+	if port != "" {
+		portNum, err := strconv.Atoi(port)
 		if err != nil {
-			log.Errorf("Invalid diagnostics.json file: %v", err)
-			return
+			utils.ErrExit("call-home port is not in valid format %s: %s", port, err)
 		}
+		CALL_HOME_SERVICE_PORT = portNum
 	}
-
-	if Payload.MigrationUuid == uuid.Nil {
-		Payload.MigrationUuid = migrationUUID
-		Payload.StartTime = time.Now().Format("2006-01-02 15:04:05")
-	}
-	Payload.YBVoyagerVersion = utils.YB_VOYAGER_VERSION
-
-}
-
-/*
-This getter method for payload: if json isn't already initialized,
-initialize it and fills mandatory fields in Payload struct
-*/
-func GetPayload(exportDir string, migrationUUID uuid.UUID) *payload {
-	//if json isn't already initialized...
-	if Payload.MigrationUuid == uuid.Nil {
-		initJSON(exportDir, migrationUUID)
-	}
-	return &Payload
 }
 
 // Send http request to flask servers after saving locally
-func PackAndSendPayload(exportdir string) {
+func SendPayload(payload *Payload) error {
+
 	if !SendDiagnostics {
-		return
-	}
-	//Pack locally
-	jsonBuf, err := json.Marshal(Payload)
-	if err != nil {
-		log.Errorf("Error while packing diagnostics json: %v", err)
-		return
+		return nil
 	}
 
-	err = os.WriteFile(jsonFilePath, jsonBuf, 0644)
-	if err != nil {
-		log.Errorf("Error while writing diagnostics json: %v", err)
-		return
-	}
+	//for local call-home setup
+	readCallHomeServiceEnv()
 
-	//Send request
-	Payload.LastUpdatedTime = time.Now().Format("2006-01-02 15:04:05")
-	postBody, err := json.Marshal(Payload)
+	postBody, err := json.Marshal(payload)
 	if err != nil {
-		log.Errorf("Error while creating http request for diagnostics: %v", err)
-		return
+		return fmt.Errorf("error while creating http request for diagnostics: %v", err)
 	}
 	requestBody := bytes.NewBuffer(postBody)
 
@@ -149,57 +229,16 @@ func PackAndSendPayload(exportdir string) {
 	resp, err := http.Post(callhomeURL, "application/json", requestBody)
 
 	if err != nil {
-		log.Errorf("Error while sending diagnostic data: %v", err)
-		return
+		return fmt.Errorf("error while sending diagnostic data: %v", err)
 	}
 
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Errorf("Error while reading HTTP response from call-home server: %v", err)
-		return
+		return fmt.Errorf("error while reading HTTP response from call-home server: %v", err)
 	}
 	log.Infof("HTTP response after sending diagnostic.json: %s\n", string(body))
 
-}
-
-// Find the largest and total data sizes, and upload to diagnostics json
-func UpdateDataStats(exportdir string, exportedRowCount map[string]int64) {
-	//Table Size Stats
-	datadirfiles := filepath.Join(exportdir, "data", "*_data*")
-
-	files, err := filepath.Glob(datadirfiles)
-	if err != nil {
-		log.Errorf("Error while matching files in data dir for diagnostics: %v", err)
-		return
-	}
-	var totalSize int64
-	var maxFileSize int64
-	for _, file := range files {
-		fileInfo, err := os.Stat(file)
-		if err != nil {
-			log.Errorf("Error while querying files for size: %v", err)
-			return
-		}
-		if maxFileSize < fileInfo.Size() {
-			maxFileSize = fileInfo.Size()
-		}
-		totalSize += fileInfo.Size()
-	}
-
-	//Row Count Stats
-	var maxTableLines, totalTableLines int64
-	var rowCount int64
-	for key := range exportedRowCount {
-		rowCount = exportedRowCount[key]
-		if rowCount > maxTableLines {
-			maxTableLines = rowCount
-		}
-		totalTableLines += rowCount
-	}
-	Payload.LargestTableRows = maxTableLines
-	Payload.TotalRows = totalTableLines
-	Payload.TotalSize = totalSize
-	Payload.LargestTableSize = maxFileSize
+	return nil
 }

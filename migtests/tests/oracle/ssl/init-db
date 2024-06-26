@@ -7,9 +7,19 @@ source ${SCRIPTS}/functions.sh
 
 echo "Assigning permissions to the validate files"
 chmod +x ${TEST_DIR}/validate
+chmod +x ${TEST_DIR}/validateAfterChanges
 
-echo "Deleting existing data in target database"
+echo "Deleting existing data in source database"
 run_sqlplus_as_schema_owner ${SOURCE_DB_NAME} ${TESTS_DIR}/oracle/utils/delete_full_schema
 
 echo "Initialising source database & inserting data"
-run_sqlplus_as_schema_owner ${SOURCE_DB_NAME} ssl_schema_data
+run_sqlplus_as_schema_owner ${SOURCE_DB_NAME} ssl_schema
+run_sqlplus_as_schema_owner ${SOURCE_DB_NAME} ssl_data
+
+if [ -n "${SOURCE_REPLICA_DB_SCHEMA}" ] && [ "${SOURCE_REPLICA_DB_SCHEMA}" != "${SOURCE_DB_SCHEMA}" ];
+then
+	echo "Initialising FF database"
+	run_sqlplus ${SOURCE_DB_NAME} ${SOURCE_REPLICA_DB_SCHEMA} ${SOURCE_REPLICA_DB_PASSWORD} ${TESTS_DIR}/oracle/utils/delete_full_schema
+	run_sqlplus ${SOURCE_DB_NAME} ${SOURCE_REPLICA_DB_SCHEMA} ${SOURCE_REPLICA_DB_PASSWORD} ssl_schema
+fi
+

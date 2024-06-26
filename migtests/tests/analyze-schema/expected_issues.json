@@ -133,7 +133,15 @@
             "Reason": "Schema containing VIEW WITH CHECK OPTION is not supported yet.",
             "SqlStatement": "CREATE VIEW v1 AS SELECT * FROM t1 WHERE a \u003c 2\nWITH CHECK OPTION;",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yugabyte-db/issues/22716"
+        },
+        {
+            "ObjectType": "VIEW",
+            "ObjectName": "v2",
+            "Reason": "Schema containing VIEW WITH CHECK OPTION is not supported yet.",
+            "SqlStatement": "CREATE VIEW v2 AS SELECT * FROM t1 WHERE a \u003c 2\nWITH LOCAL CHECK OPTION;",
+            "Suggestion": "",
+            "GH": "https://github.com/yugabyte/yugabyte-db/issues/22716"
         },
         {
             "ObjectType": "COLLATION",
@@ -173,7 +181,7 @@
             "Reason": "DROP INDEX CONCURRENTLY not supported yet",
             "SqlStatement": "DROP INDEX CONCURRENTLY sales_quantity_index;",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yugabyte-db/issues/22717"
         },
         {
             "ObjectType": "TRIGGER",
@@ -209,9 +217,17 @@
         },
         {
             "ObjectType": "TABLE",
-            "ObjectName": "newtable",
-            "Reason": "Stored generated column not supported. Column is: id",
-            "SqlStatement": "CREATE TABLE newtable (\n\tid UUID GENERATED ALWAYS AS gen_random_uuid() STORED,\n\torg uuid NOT NULL,\n\tname text,\n\tcreated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP UNIQUE(name, org)\n);",
+            "ObjectName": "public.employees4",
+            "Reason": "Stored generated columns are not supported.",
+            "SqlStatement": "CREATE TABLE public.employees4 (\n    id integer NOT NULL,\n    first_name character varying(50) NOT NULL,\n    last_name character varying(50) NOT NULL,\n    full_name character varying(101) GENERATED ALWAYS AS ((((first_name)::text || ' '::text) || (last_name)::text)) STORED\n);",
+            "Suggestion": "",
+            "GH": "https://github.com/yugabyte/yugabyte-db/issues/10695"
+        },
+        {
+            "ObjectType": "TABLE",
+            "ObjectName": "order_details",
+            "Reason": "Stored generated columns are not supported.",
+            "SqlStatement": "CREATE TABLE order_details (\n    detail_id integer NOT NULL,\n    quantity integer,\n    price_per_unit numeric,\n    amount numeric GENERATED ALWAYS AS (((quantity)::numeric * price_per_unit)) STORED\n);",
             "Suggestion": "",
             "GH": "https://github.com/yugabyte/yugabyte-db/issues/10695"
         },
@@ -397,7 +413,7 @@
             "Reason": "COMPOUND TRIGGER not supported in YugabyteDB.",
             "SqlStatement": "CREATE TRIGGER emp_trig\n\tCOMPOUND INSERT ON emp FOR EACH ROW\n\tEXECUTE PROCEDURE trigger_fct_emp_trig();",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1543"
         },
         {
             "ObjectType": "TYPE",
@@ -421,7 +437,7 @@
             "Reason": "AnyData datatype doesn't have a mapping in YugabyteDB",
             "SqlStatement": "CREATE TABLE anydata_test (\n\tid numeric,\n\tcontent ANYDATA\n) ;",
             "Suggestion": "Remove the column with AnyData datatype or change it to a relevant supported datatype",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1541"
         },
         {
             "ObjectType": "TABLE",
@@ -429,7 +445,7 @@
             "Reason": "AnyDataSet datatype doesn't have a mapping in YugabyteDB",
             "SqlStatement": "CREATE TABLE anydataset_test (\n\tid numeric,\n\tcontent ANYDATASET\n) ;",
             "Suggestion": "Remove the column with AnyDataSet datatype or change it to a relevant supported datatype",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1541"
         },
         {
             "ObjectType": "TABLE",
@@ -437,7 +453,7 @@
             "Reason": "AnyType datatype doesn't have a mapping in YugabyteDB",
             "SqlStatement": "CREATE TABLE anytype_test (\n\tid numeric,\n\tcontent ANYTYPE\n) ;",
             "Suggestion": "Remove the column with AnyType datatype or change it to a relevant supported datatype",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1541"
         },
         {
             "ObjectType": "TABLE",
@@ -445,7 +461,7 @@
             "Reason": "URIType datatype doesn't have a mapping in YugabyteDB",
             "SqlStatement": "CREATE TABLE uritype_test (\n\tid numeric,\n\tcontent URITYPE\n) ;",
             "Suggestion": "Remove the column with URIType datatype or change it to a relevant supported datatype",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1541"
         },
         {
             "ObjectType": "TABLE",
@@ -461,7 +477,7 @@
             "Reason": "JSON_ARRAYAGG() function is not available in YugabyteDB",
             "SqlStatement": "CREATE OR REPLACE VIEW test AS (\n                            select x , JSON_ARRAYAGG(trunc(b, 2) order by t desc) as agg\n                            FROM test1\n                            where t = '1DAY' group by x\n                            );",
             "Suggestion": "Rename the function to YugabyteDB's equivalent JSON_AGG()",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1542"
         },
         {
             "ObjectType": "PROCEDURE",
@@ -469,7 +485,7 @@
             "Reason": "JSON_ARRAYAGG() function is not available in YugabyteDB",
             "SqlStatement": "CREATE OR REPLACE PROCEDURE foo1 (p_id integer) AS $body$\nBEGIN\n    create temporary table temp(id int, agg bigint);\n    insert into temp(id,agg) select x , JSON_ARRAYAGG(trunc(b, 2) order by t desc) as agg FROM test1\n    select agg from temp;\nend;\n$body$\nLANGUAGE PLPGSQL\nSECURITY DEFINER\n;",
             "Suggestion": "Rename the function to YugabyteDB's equivalent JSON_AGG()",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1542"
         },
         {
             "ObjectType": "TRIGGER",
@@ -477,7 +493,7 @@
             "Reason": "JSON_ARRAYAGG() function is not available in YugabyteDB",
             "SqlStatement": "CREATE TRIGGER test\n    INSERT on test for each ROW\n    EXECUTE PROCEDURE JSON_ARRAYAGG(trunc(b, 2) order by t desc);",
             "Suggestion": "Rename the function to YugabyteDB's equivalent JSON_AGG()",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1542"
         },
         {
             "ObjectType": "TABLE",
@@ -493,7 +509,7 @@
             "Reason": "This extension is not supported in YugabyteDB.",
             "SqlStatement": "CREATE EXTENSION IF NOT EXISTS aws_commons WITH SCHEMA public;",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1538"
         },
         {
             "ObjectType": "EXTENSION",
@@ -501,7 +517,7 @@
             "Reason": "This extension is not supported in YugabyteDB.",
             "SqlStatement": "CREATE EXTENSION IF NOT EXISTS plperl WITH SCHEMA pg_catalog;",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1538"
         },
         {
             "ObjectType": "EXTENSION",
@@ -509,7 +525,7 @@
             "Reason": "This extension is not supported in YugabyteDB.",
             "SqlStatement": "CREATE EXTENSION IF NOT EXISTS hstore_plperl WITH SCHEMA public;",
             "Suggestion": "",
-            "GH": ""
+            "GH": "https://github.com/yugabyte/yb-voyager/issues/1538"
         },
         {
             "ObjectType": "CURSOR",

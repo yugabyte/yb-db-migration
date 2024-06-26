@@ -4,7 +4,7 @@ import yb
 
 def main():
     yb.run_checks(migration_completed_checks)
-
+    yb.run_checks(YB_specific_checks)
 
 #=============================================================================
 
@@ -42,6 +42,9 @@ EXPECTED_COUNTS = {
     "procedures_count": 2
   }
 }
+
+def YB_specific_checks(tgt):
+    yb.verify_colocation(tgt, "postgresql")
 
 def check_validations_per_schema(tgt, schema_name) -> None:
 

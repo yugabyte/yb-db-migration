@@ -11,6 +11,7 @@ fi
 
 set -x
 
+export YB_VOYAGER_SEND_DIAGNOSTICS=false
 export TEST_NAME=$1
 
 export REPO_ROOT="${PWD}"
@@ -23,7 +24,11 @@ export QUEUE_SEGMENT_MAX_BYTES=400
 export PYTHONPATH="${REPO_ROOT}/migtests/lib"
 
 # Order of env.sh import matters.
-source ${TEST_DIR}/env.sh
+if [ -f "${TEST_DIR}/live_env.sh" ]; then
+    source "${TEST_DIR}/live_env.sh"
+else
+    source "${TEST_DIR}/env.sh"
+fi
 
 if [ "${SOURCE_DB_TYPE}" = "oracle" ]
 then
@@ -61,8 +66,11 @@ main() {
 	yb-voyager version
 
 	step "Assess Migration"
-	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
-		assess_migration
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" == "oracle" ]; then
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
 
 		step "Validate Assessment Reports"
 		# Checking if the assessment reports were created
@@ -75,6 +83,8 @@ main() {
 			cat_log_file "yb-voyager-assess-migration.log"
 			exit 1
 		fi
+
+		post_assess_migration
 	fi
 
 	step "Export schema."
@@ -97,7 +107,7 @@ main() {
 
 	step "Create target database."
 	run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
-	if [ "${SOURCE_DB_TYPE}" = "postgresql" ]; then
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" = "oracle" ]; then
 		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME} with COLOCATION=TRUE"
 	else
 		run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME}"
@@ -111,6 +121,12 @@ main() {
 	step "Import schema."
 	import_schema
 	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi
 
 	step "Export data."
 	# false if exit code of export_data is non-zero
@@ -171,11 +187,11 @@ main() {
 	step "Initiating cutover"
 	yb-voyager initiate cutover to target --export-dir ${EXPORT_DIR} --prepare-for-fall-back true --yes
 
-	for ((i = 0; i < 15; i++)); do
+	for ((i = 0; i < 20; i++)); do
     if [ "$(yb-voyager cutover status --export-dir "${EXPORT_DIR}" | grep "cutover to target status" | cut -d ':'  -f 2 | tr -d '[:blank:]')" != "COMPLETED" ]; then
         echo "Waiting for cutover to be COMPLETED..."
         sleep 20
-        if [ "$i" -eq 14 ]; then
+        if [ "$i" -eq 19 ]; then
             tail_log_file "yb-voyager-export-data.log"
             tail_log_file "yb-voyager-import-data.log"
 			tail_log_file "debezium-source_db_exporter.log"
@@ -199,11 +215,11 @@ main() {
 	step "Initiating cutover to source"
 	yb-voyager initiate cutover to source --export-dir ${EXPORT_DIR} --yes
 
-	for ((i = 0; i < 10; i++)); do
+	for ((i = 0; i < 15; i++)); do
     if [ "$(yb-voyager cutover status --export-dir "${EXPORT_DIR}" | grep "cutover to source status" | cut -d ':'  -f 2 | tr -d '[:blank:]')"  != "COMPLETED" ]; then
         echo "Waiting for switchover to be COMPLETED..."
         sleep 20
-        if [ "$i" -eq 9 ]; then
+        if [ "$i" -eq 14 ]; then
             tail_log_file "yb-voyager-import-data-to-source.log"
             tail_log_file "yb-voyager-export-data-from-target.log"
 			tail_log_file "debezium-target_db_exporter_fb.log"

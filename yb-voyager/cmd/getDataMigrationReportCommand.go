@@ -18,12 +18,10 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"github.com/gosuri/uitable"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
@@ -188,22 +186,49 @@ func getDataMigrationReportCmdFn(msr *metadb.MigrationStatusRecord) {
 	}
 
 	var targetImportedSnapshotRowsMap *utils.StructMap[sqlname.NameTuple, int64]
+	var targetEventsImportedMap *utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter]
 	if msr.TargetDBConf != nil {
-		targetImportedSnapshotRowsMap, err = getImportedSnapshotRowsMap("target", tableNameTups)
+		targetImportedSnapshotRowsMap, err = getImportedSnapshotRowsMap("target")
 		if err != nil {
 			utils.ErrExit("error while getting imported snapshot rows for target DB: %w\n", err)
+		}
+		targetEventsImportedMap, err = getImportedEventsMap("target", tableNameTups, msr.TargetDBConf)
+		if err != nil {
+			utils.ErrExit("error while getting imported events counts for target DB: %w\n", err)
 		}
 	}
 
 	var replicaImportedSnapshotRowsMap *utils.StructMap[sqlname.NameTuple, int64]
+	var replicaEventsImportedMap *utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter]
 	if fFEnabled {
+		// In this case we need to lookup in a namereg where role is SOURCE_REPLICA_DB_IMPORTER_ROLE so that
+		// look up happens properly for source_replica names as here reg is the map of target->source-replica tablename
 		oldNameReg := namereg.NameReg
 		namereg.NameReg = *nameRegistryForSourceReplicaRole
-		replicaImportedSnapshotRowsMap, err = getImportedSnapshotRowsMap("source-replica", tableNameTups)
+		replicaImportedSnapshotRowsMap, err = getImportedSnapshotRowsMap("source-replica")
 		if err != nil {
 			utils.ErrExit("error while getting imported snapshot rows for source-replica DB: %w\n", err)
 		}
+		sourceReplicaTups := make([]sqlname.NameTuple, len(tableNameTups))
+		for i, ntup := range tableNameTups {
+			sourceReplicaTups[i], err = namereg.NameReg.LookupTableName(ntup.ForKey())
+			if err != nil {
+				utils.ErrExit("lookup table %s: %v", ntup.ForKey(), err)
+			}
+		}
+		replicaEventsImportedMap, err = getImportedEventsMap("source-replica", sourceReplicaTups, msr.SourceReplicaDBConf)
+		if err != nil {
+			utils.ErrExit("error while getting imported events counts for source-replica DB: %w\n", err)
+		}
 		namereg.NameReg = oldNameReg
+	}
+
+	var sourceEventsImportedMap *utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter]
+	if fBEnabled {
+		sourceEventsImportedMap, err = getImportedEventsMap("source", tableNameTups, msr.SourceDBAsTargetConf)
+		if err != nil {
+			utils.ErrExit("error while getting imported events counts for source DB in case of fall-back: %w\n", err)
+		}
 	}
 
 	for i, nameTup := range tableNameTups {
@@ -219,7 +244,7 @@ func getDataMigrationReportCmdFn(msr *metadb.MigrationStatusRecord) {
 			utils.ErrExit("error while getting exported events counts for source DB: %w\n", err)
 		}
 		if fBEnabled {
-			err = updateImportedEventsCountsInTheRow(source.DBType, &row, nameTup, msr.SourceDBAsTargetConf, nil) //fall back IN counts
+			err = updateImportedEventsCountsInTheRow(&row, nameTup, nil, sourceEventsImportedMap) //fall back IN counts
 			if err != nil {
 				utils.ErrExit("error while getting imported events for source DB in case of fall-back: %w\n", err)
 			}
@@ -230,7 +255,7 @@ func getDataMigrationReportCmdFn(msr *metadb.MigrationStatusRecord) {
 		row.DBType = "target"
 		row.ExportedSnapshotRows = 0
 		if msr.TargetDBConf != nil { // In case import is not started yet, target DB conf will be nil
-			err = updateImportedEventsCountsInTheRow(source.DBType, &row, nameTup, msr.TargetDBConf, targetImportedSnapshotRowsMap) //target IN counts
+			err = updateImportedEventsCountsInTheRow(&row, nameTup, targetImportedSnapshotRowsMap, targetEventsImportedMap) //target IN counts
 			if err != nil {
 				utils.ErrExit("error while getting imported events for target DB: %w\n", err)
 			}
@@ -247,7 +272,7 @@ func getDataMigrationReportCmdFn(msr *metadb.MigrationStatusRecord) {
 			row.TableName = ""
 			row.DBType = "source-replica"
 			row.ExportedSnapshotRows = 0
-			err = updateImportedEventsCountsInTheRow(source.DBType, &row, nameTup, msr.SourceReplicaDBConf, replicaImportedSnapshotRowsMap) //fall forward IN counts
+			err = updateImportedEventsCountsInTheRow(&row, nameTup, replicaImportedSnapshotRowsMap, replicaEventsImportedMap) //fall forward IN counts
 			if err != nil {
 				utils.ErrExit("error while getting imported events for DB %s: %w\n", row.DBType, err)
 			}
@@ -305,7 +330,32 @@ func updateExportedSnapshotRowsInTheRow(msr *metadb.MigrationStatusRecord, row *
 	return nil
 }
 
-func updateImportedEventsCountsInTheRow(sourceDBType string, row *rowData, tableNameTup sqlname.NameTuple, targetConf *tgtdb.TargetConf, snapshotImportedRowsMap *utils.StructMap[sqlname.NameTuple, int64]) error {
+func getImportedEventsMap(dbType string, tableNameTups []sqlname.NameTuple, targetConf *tgtdb.TargetConf) (*utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter], error) {
+	switch dbType {
+	case "target":
+		importerRole = TARGET_DB_IMPORTER_ROLE
+	case "source-replica":
+		importerRole = SOURCE_REPLICA_DB_IMPORTER_ROLE
+	case "source":
+		importerRole = SOURCE_DB_IMPORTER_ROLE
+	}
+	//reinitialise targetDB
+	tconf = *targetConf
+	tdb = tgtdb.NewTargetDB(&tconf)
+	err := tdb.Init()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize the target DB: %w", err)
+	}
+	defer tdb.Finalize()
+	state := NewImportDataState(exportDir)
+	tableNameTupToEventsCounter, err := state.GetImportedEventsStatsForTableList(tableNameTups, migrationUUID)
+	if err != nil {
+		return nil, fmt.Errorf("imported events stats for tableList: %s", err)
+	}
+	return tableNameTupToEventsCounter, nil
+}
+
+func updateImportedEventsCountsInTheRow(row *rowData, tableNameTup sqlname.NameTuple, snapshotImportedRowsMap *utils.StructMap[sqlname.NameTuple, int64], eventsImportedMap *utils.StructMap[sqlname.NameTuple, *tgtdb.EventCounter]) error {
 	switch row.DBType {
 	case "target":
 		importerRole = TARGET_DB_IMPORTER_ROLE
@@ -317,41 +367,19 @@ func updateImportedEventsCountsInTheRow(sourceDBType string, row *rowData, table
 	if importerRole == SOURCE_REPLICA_DB_IMPORTER_ROLE {
 		var err error
 		tblName := tableNameTup.ForKey()
+		//In case of source-replica role namereg is the map of target->source-replica name 
+		//and hence ForKey() returns source-relica name so we need to get that from reg
 		tableNameTup, err = nameRegistryForSourceReplicaRole.LookupTableName(tblName)
 		if err != nil {
 			return fmt.Errorf("lookup %s in source replica name registry: %v", tblName, err)
 		}
 	}
 
-	//reinitialise targetDB
-	tconf = *targetConf
-	tdb = tgtdb.NewTargetDB(&tconf)
-	err := tdb.Init()
-	if err != nil {
-		return fmt.Errorf("failed to initialize the target DB: %w", err)
-	}
-	defer tdb.Finalize()
-	state := NewImportDataState(exportDir)
-
 	if importerRole != SOURCE_DB_IMPORTER_ROLE {
 		row.ImportedSnapshotRows, _ = snapshotImportedRowsMap.Get(tableNameTup)
 	}
 
-	eventCounter, err := state.GetImportedEventsStatsForTable(tableNameTup, migrationUUID)
-	if err != nil {
-		if !strings.Contains(err.Error(), "cannot assign NULL to *int64") &&
-			!strings.Contains(err.Error(), "converting NULL to int64") { //TODO: handle better in GetImportedEventsStatsForTable() itself later
-			return fmt.Errorf("get imported events stats for table %q for DB type %s: %w", tableNameTup, row.DBType, err)
-		} else {
-			//in case import streaming is not started yet, metadata will not be initialized
-			log.Warnf("stream ingestion is not started yet for table %q for DB type %s", tableNameTup, row.DBType)
-			eventCounter = &tgtdb.EventCounter{
-				NumInserts: 0,
-				NumUpdates: 0,
-				NumDeletes: 0,
-			}
-		}
-	}
+	eventCounter, _ := eventsImportedMap.Get(tableNameTup)
 	row.ImportedInserts = eventCounter.NumInserts
 	row.ImportedUpdates = eventCounter.NumUpdates
 	row.ImportedDeletes = eventCounter.NumDeletes

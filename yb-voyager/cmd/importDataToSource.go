@@ -20,6 +20,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
@@ -81,4 +84,42 @@ func initTargetConfFromSourceConf() error {
 	tconf.OracleHome = sconf.OracleHome
 	tconf.Uri = sconf.Uri
 	return nil
+}
+
+func packAndSendImportDataToSourcePayload(status string) {
+
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationType = LIVE_MIGRATION
+
+	sourceDBDetails := callhome.SourceDBDetails{
+		Host:      tconf.Host,
+		DBType:    tconf.TargetDBType,
+		DBVersion: targetDBDetails.DBVersion,
+	}
+	payload.SourceDBDetails = callhome.MarshalledJsonString(sourceDBDetails)
+
+	payload.MigrationPhase = IMPORT_DATA_SOURCE_PHASE
+	importDataPayload := callhome.ImportDataPhasePayload{
+		ParallelJobs: int64(tconf.Parallelism),
+		StartClean:   bool(startClean),
+		LiveWorkflowType: FALL_BACK,
+	}
+
+	importDataPayload.Phase = importPhase
+
+	if importPhase != dbzm.MODE_SNAPSHOT {
+		importDataPayload.EventsImportRate = statsReporter.EventsImportRateLast3Min
+		importDataPayload.TotalImportedEvents = statsReporter.TotalEventsImported
+	}
+
+	payload.PhasePayload = callhome.MarshalledJsonString(importDataPayload)
+	payload.Status = status
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
 }

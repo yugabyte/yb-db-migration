@@ -17,9 +17,7 @@ package utils
 
 import (
 	"bufio"
-	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
@@ -36,7 +34,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
-	"github.com/yosssi/gohtml"
 	"golang.org/x/exp/slices"
 )
 
@@ -218,18 +215,6 @@ func GetObjectNameListFromReport(report SchemaReport, objType string) []string {
 	}
 	sort.Strings(objectList)
 	return objectList
-}
-
-func PrettifyHtmlString(htmlStr string) string {
-	return gohtml.Format(htmlStr)
-}
-
-func PrettifyJsonString(jsonStr string) string {
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, []byte(jsonStr), "", "    "); err != nil {
-		panic(err)
-	}
-	return prettyJSON.String()
 }
 
 func GetObjectDirPath(schemaDirPath string, objType string) string {
@@ -528,7 +513,7 @@ func ReadTableNameListFromFile(filePath string) ([]string, error) {
 func GetLogMiningFlushTableName(migrationUUID uuid.UUID) string {
 	// SQL tables doesn't support '-' in the name
 	convertedMigUUID := strings.Replace(migrationUUID.String(), "-", "_", -1)
-	return fmt.Sprintf("VOYAGER_LOG_MINING_FLUSH_%s", convertedMigUUID)
+	return fmt.Sprintf("VOYAGER_LOG_MINING_FLUSH_%s", strings.ToUpper(convertedMigUUID))
 }
 
 func ConvertStringSliceToInterface(slice []string) []interface{} {
@@ -587,4 +572,11 @@ func BytesToGB(sizeInBytes float64) float64 {
 		return 0
 	}
 	return sizeInGB
+}
+
+func SafeDereferenceInt64(ptr *int64) int64 {
+	if ptr != nil {
+		return *ptr
+	}
+	return 0
 }

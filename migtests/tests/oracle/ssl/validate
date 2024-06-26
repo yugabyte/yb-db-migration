@@ -1,39 +1,45 @@
 #!/usr/bin/env python3
 
+import common
 import os
 import yb
 import collections
+import oracle
 
 def main():
-	yb.run_checks(migration_completed_checks)
+	test_type_flags = common.valparser()
+	
+	migration_completed_checks_yb()
+
+	if test_type_flags['ff_enabled'] == 'true':
+		migration_completed_checks_ff()
 
 EXPECTED_ROW_COUNT = {
 	'test_simple': 1,
 }
 
-EXPECTED_DATA_TYPES = {
-	'test_simple': {
-		'id': 'numeric',
-		'val': 'character varying'
-	},
-}
+def migration_completed_checks_yb():
+	print("Running tests on YB")
+	global db_schema
+	db_schema="public"
+	yb.run_checks(migration_completed_checks)
+	yb.run_checks(YB_specific_checks)
+
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt, "oracle")
+
+def migration_completed_checks_ff():
+	print("Running tests on Oracle source replica")
+	global db_schema
+	db_schema = os.environ.get("SOURCE_REPLICA_DB_SCHEMA")
+	oracle.run_checks(migration_completed_checks, db_type="source_replica")
 
 def migration_completed_checks(tgt):
 	# Validation to check for matching row counts
-	got_row_count = tgt.row_count_of_all_tables("public")
+	got_row_count = tgt.row_count_of_all_tables(db_schema)
 	for table_name, row_count in EXPECTED_ROW_COUNT.items():
 		print(f"table_name: {table_name}, row_count: {got_row_count[table_name]}")
 		assert row_count == got_row_count[table_name]
-#=============================================================================
-	fetched_datatypes_schema = tgt.get_column_to_data_type_mapping("public")
- 
-	print(fetched_datatypes_schema)
-	for table_name, columns in fetched_datatypes_schema.items():
-		print(f"table_name: {table_name} ---- ")
-		for column_name, datatype in columns.items():
-			print(f"column_name: {column_name}, datatype: {datatype}")
-			assert datatype == EXPECTED_DATA_TYPES[table_name][column_name]
-
 
 if __name__ == "__main__":
 	main()

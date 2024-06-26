@@ -32,6 +32,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/datafile"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
@@ -42,6 +43,7 @@ import (
 )
 
 var ybCDCClient *dbzm.YugabyteDBCDCClient
+var totalEventCount, totalEventCountRun, throughputInLast3Min, throughputInLast10Min int64
 
 func prepareDebeziumConfig(partitionsToRootTableMap map[string]string, tableList []sqlname.NameTuple, tablesColumnList *utils.StructMap[sqlname.NameTuple, []string], leafPartitions *utils.StructMap[sqlname.NameTuple, []string]) (*dbzm.Config, map[string]int64, error) {
 	runId = time.Now().String()
@@ -199,10 +201,10 @@ func prepareDebeziumConfig(partitionsToRootTableMap map[string]string, tableList
 
 func getColumnToSequenceMapping(colToSeqMap map[string]string) (string, error) {
 	var colToSeqMapSlices []string
-	
-	for k,v := range colToSeqMap {
+
+	for k, v := range colToSeqMap {
 		parts := strings.Split(k, ".")
-		leafTable := fmt.Sprintf("%s.%s",parts[0],parts[1])
+		leafTable := fmt.Sprintf("%s.%s", parts[0], parts[1])
 		rootTable, isRenamed := renameTableIfRequired(leafTable)
 		if isRenamed {
 			rootTableTup, err := namereg.NameReg.LookupTableName(rootTable)
@@ -378,18 +380,6 @@ func reportStreamingProgress() {
 	footerWriter := tableWriter.Newline()
 	tableWriter.Start()
 	for {
-		totalEventCount, totalEventCountRun, err := metaDB.GetTotalExportedEventsByExporterRole(exporterRole, runId)
-		if err != nil {
-			utils.ErrExit("failed to get total exported count from metadb: %w", err)
-		}
-		throughputInLast3Min, err := metaDB.GetExportedEventsRateInLastNMinutes(runId, 3)
-		if err != nil {
-			utils.ErrExit("failed to get export rate from metadb: %w", err)
-		}
-		throughputInLast10Min, err := metaDB.GetExportedEventsRateInLastNMinutes(runId, 10)
-		if err != nil {
-			utils.ErrExit("failed to get export rate from metadb: %w", err)
-		}
 		fmt.Fprint(tableWriter, color.GreenString("| %-40s | %30s |\n", "---------------------------------------", "-----------------------------"))
 		fmt.Fprint(headerWriter, color.GreenString("| %-40s | %30s |\n", "Metric", "Value"))
 		fmt.Fprint(separatorWriter, color.GreenString("| %-40s | %30s |\n", "---------------------------------------", "-----------------------------"))
@@ -403,10 +393,37 @@ func reportStreamingProgress() {
 	}
 }
 
+func calculateStreamingProgress() {
+	var err error
+	for {
+		totalEventCount, totalEventCountRun, err = metaDB.GetTotalExportedEventsByExporterRole(exporterRole, runId)
+		if err != nil {
+			utils.ErrExit("failed to get total exported count from metadb: %w", err)
+		}
+
+		throughputInLast3Min, err = metaDB.GetExportedEventsRateInLastNMinutes(runId, 3)
+		if err != nil {
+			utils.ErrExit("failed to get export rate from metadb: %w", err)
+		}
+		throughputInLast10Min, err = metaDB.GetExportedEventsRateInLastNMinutes(runId, 10)
+		if err != nil {
+			utils.ErrExit("failed to get export rate from metadb: %w", err)
+		}
+		if disablePb && callhome.SendDiagnostics {
+			// to not do unneccessary frequent calls to metadb in case we only require this info for callhome
+			time.Sleep(12 * time.Minute)
+		} else {
+			time.Sleep(10 * time.Second)
+		}
+	}
+
+}
+
 func checkAndHandleSnapshotComplete(config *dbzm.Config, status *dbzm.ExportStatus, progressTracker *ProgressTracker) (bool, error) {
 	if !status.SnapshotExportIsComplete() {
 		return false, nil
 	}
+	exportPhase = dbzm.MODE_STREAMING
 	if config.SnapshotMode != "never" {
 		progressTracker.Done(status)
 		setDataIsExported()
@@ -447,6 +464,9 @@ func checkAndHandleSnapshotComplete(config *dbzm.Config, status *dbzm.ExportStat
 			}
 		}
 		color.Blue("streaming changes to a local queue file...")
+		if !disablePb || callhome.SendDiagnostics {
+			go calculateStreamingProgress()
+		}
 		if !disablePb {
 			go reportStreamingProgress()
 		}
@@ -464,7 +484,7 @@ func writeDataFileDescriptor(exportDir string, status *dbzm.ExportStatus) error 
 		// TODO: TableName and FilePath must be quoted by debezium plugin.
 		tableNameTup, err := namereg.NameReg.LookupTableName(fmt.Sprintf("%s.%s", table.SchemaName, table.TableName))
 		if err != nil {
-			return fmt.Errorf("lookup for table name %s: %v", table.TableName,  err)
+			return fmt.Errorf("lookup for table name %s: %v", table.TableName, err)
 		}
 		fileEntry := &datafile.FileEntry{
 			TableName: tableNameTup.ForKey(),

@@ -21,21 +21,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
-	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
+	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 
-	"github.com/spf13/cobra"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
-
-	pg_query "github.com/pganalyze/pg_query_go/v5"
 )
 
 var skipRecommendations utils.BoolStr
 var assessmentReportPath string
+var assessmentRecommendationsApplied bool
 
 var exportSchemaCmd = &cobra.Command{
 	Use: "schema",
@@ -96,10 +96,16 @@ func exportSchema() error {
 		log.Errorf("failed to connect to the source db: %s", err)
 		return fmt.Errorf("failed to connect to the source db: %w", err)
 	}
+
 	defer source.DB().Disconnect()
 	checkSourceDBCharset()
 	source.DB().CheckRequiredToolsAreInstalled()
 	sourceDBVersion := source.DB().GetVersion()
+	source.DBVersion = sourceDBVersion
+	source.DBSize, err = source.DB().GetDatabaseSize()
+	if err != nil {
+		log.Errorf("error getting database size: %v", err) //can just log as this is used for call-home only
+	}
 	utils.PrintAndLog("%s version: %s\n", source.DBType, sourceDBVersion)
 	err = retrieveMigrationUUID()
 	if err != nil {
@@ -124,10 +130,7 @@ func exportSchema() error {
 
 	utils.PrintAndLog("\nExported schema files created under directory: %s\n\n", filepath.Join(exportDir, "schema"))
 
-	payload := callhome.GetPayload(exportDir, migrationUUID)
-	payload.SourceDBType = source.DBType
-	payload.SourceDBVersion = sourceDBVersion
-	callhome.PackAndSendPayload(exportDir)
+	packAndSendExportSchemaPayload(COMPLETE)
 
 	saveSourceDBConfInMSR()
 	setSchemaIsExported()
@@ -135,6 +138,33 @@ func exportSchema() error {
 	exportSchemaCompleteEvent := createExportSchemaCompletedEvent()
 	controlPlane.ExportSchemaCompleted(&exportSchemaCompleteEvent)
 	return nil
+}
+
+func packAndSendExportSchemaPayload(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationPhase = EXPORT_SCHEMA_PHASE
+	payload.Status = status
+	sourceDBDetails := callhome.SourceDBDetails{
+		Host:      source.Host,
+		DBType:    source.DBType,
+		DBVersion: source.DBVersion,
+		DBSize:    source.DBSize,
+	}
+	payload.SourceDBDetails = callhome.MarshalledJsonString(sourceDBDetails)
+	exportSchemaPayload := callhome.ExportSchemaPhasePayload{
+		StartClean:             bool(startClean),
+		AppliedRecommendations: assessmentRecommendationsApplied,
+	}
+
+	payload.PhasePayload = callhome.MarshalledJsonString(exportSchemaPayload)
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
 }
 
 func init() {
@@ -214,6 +244,8 @@ func applyMigrationAssessmentRecommendations() error {
 	if skipRecommendations {
 		log.Infof("not apply recommendations due to flag --skip-recommendations=true")
 		return nil
+	} else if source.DBType == MYSQL {
+		return nil
 	}
 
 	// TODO: copy the reports to "export-dir/assessment/reports" for further usage
@@ -240,6 +272,7 @@ func applyMigrationAssessmentRecommendations() error {
 			return fmt.Errorf("failed to apply colocated vs sharded table recommendation: %w", err)
 		}
 	}
+	assessmentRecommendationsApplied = true
 	utils.PrintAndLog("Applied assessment recommendations.")
 
 	return nil
@@ -350,12 +383,33 @@ func applyShardingRecommendationIfMatching(sqlInfo *sqlInfo, shardedTables []str
 		return formattedStmt, false, nil
 	}
 	createTableStmt := createStmtNode.CreateStmt
-
-	// Extract schema and table name
 	relation := createTableStmt.Relation
-	parsedTableName := relation.Schemaname + "." + relation.Relname
-	if !slices.Contains(shardedTables, parsedTableName) {
+
+	// true -> oracle, false -> PG
+	parsedTableName := lo.Ternary(relation.Schemaname == "", relation.Relname,
+		relation.Schemaname+"."+relation.Relname)
+
+	match := false
+	switch source.DBType {
+	case POSTGRESQL:
+		match = slices.Contains(shardedTables, parsedTableName)
+	case ORACLE:
+		// TODO: handle case-sensitivity properly
+		for _, shardedTable := range shardedTables {
+			parts := strings.Split(shardedTable, ".")
+			if strings.ToLower(parts[1]) == parsedTableName {
+				match = true
+				break
+			}
+		}
+	default:
+		panic(fmt.Sprintf("unsupported source db type %s for applying sharding recommendations", source.DBType))
+	}
+	if !match {
+		log.Infof("%q not present in the sharded table list", parsedTableName)
 		return formattedStmt, false, nil
+	} else {
+		log.Infof("%q present in the sharded table list", parsedTableName)
 	}
 
 	colocationOption := &pg_query.DefElem{

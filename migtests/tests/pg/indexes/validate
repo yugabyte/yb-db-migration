@@ -4,7 +4,7 @@ import yb
 
 def main():
 	yb.run_checks(migration_completed_checks)
-
+	yb.run_checks(YB_specific_checks)
 
 #=============================================================================
 
@@ -32,20 +32,15 @@ EXPECTED_INDEX_COUNT = {
 	'gin_index_test': 1,
 }
 
-def migration_completed_checks(tgt):
-	table_list = tgt.get_table_names("public")
-	print("table_list:", table_list)
-	assert len(table_list) == 9
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt, "postgresql")
 
+def migration_completed_checks(tgt):
 	got_row_count = tgt.row_count_of_all_tables("public")
 	for table_name, row_count in EXPECTED_ROW_COUNT.items():
 		print(f"table_name: {table_name}, row_count: {got_row_count[table_name]}")
 		assert row_count == got_row_count[table_name]
 
-	get_index_cnt = tgt.get_count_index_on_table("public")
-	for table_name, index_count in EXPECTED_INDEX_COUNT.items():
-		print(f"table_name: {table_name}, index_count: {get_index_cnt[table_name]}")
-		assert index_count == get_index_cnt[table_name]
 
 
 if __name__ == "__main__":

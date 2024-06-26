@@ -13,13 +13,15 @@ import (
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/dbzm"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/lockfile"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/srcdb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/tgtdb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
-	"golang.org/x/term"
 )
 
 var (
@@ -94,6 +96,28 @@ func endMigrationCommandFn(cmd *cobra.Command, args []string) {
 
 	cleanupExportDir()
 	utils.PrintAndLog("Migration ended successfully")
+	packAndSendEndMigrationPayload(COMPLETE)
+}
+
+func packAndSendEndMigrationPayload(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	payload := createCallhomePayload()
+	payload.MigrationPhase = END_MIGRATION_PHASE
+	endMigrationPayload := callhome.EndMigrationPhasePayload{
+		BackupLogFiles:       bool(backupLogFiles),
+		BackupSchemaFiles:    bool(backupSchemaFiles),
+		BackupDataFiles:      bool(backupDataFiles),
+		SaveMigrationReports: bool(saveMigrationReports),
+	}
+	payload.PhasePayload = callhome.MarshalledJsonString(endMigrationPayload)
+	payload.Status = status
+
+	err := callhome.SendPayload(&payload)
+	if err == nil && (status == COMPLETE || status == ERROR) {
+		callHomeErrorOrCompletePayloadSent = true
+	}
 }
 
 func backupSchemaFilesFn() {

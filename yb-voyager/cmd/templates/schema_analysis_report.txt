@@ -1,0 +1,43 @@
++-------------------------------------------------+
+|               Database Migration Report         |
++-------------------------------------------------+
+
+Database Information
+---------------------
+
+Database Name       : {{ .SchemaSummary.DBName }}
+Schema Name(s)      : {{ join .SchemaSummary.SchemaNames ", " }}
+DB Version          : {{ .SchemaSummary.DBVersion }}
+
+Schema Summary
+--------------- 
+{{ range .SchemaSummary.DBObjects }}
+Object Type         : {{ .ObjectType }}
+  - Total Count     : {{ .TotalCount }}
+  - Valid Count     : {{ sub .TotalCount .InvalidCount }}
+  - Invalid Count   : {{ .InvalidCount }}
+  - Object Names    : {{ .ObjectNames }}{{ if .Details }}  
+  - Details         : {{ .Details }}
+{{ end }}
+{{ end }}
+
+Issues
+------- 
+{{ if .Issues }} {{ range $index, $issue := .Issues }}
+{{ add $index 1 }}. Issue in Object     : {{ .ObjectType }}
+  - Object Name     : {{ .ObjectName }}
+  - Reason          : {{ .Reason }}
+  - SQL Statement   : {{ .SqlStatement }}
+  - File Path       : {{ .FilePath }}{{ if .Suggestion }}
+  - Suggestion      : {{ .Suggestion }} {{ end }}{{ if .GH }}
+  - Github Issue    : {{ .GH }}{{ end }}
+{{ end }}{{ else }}
+No issues found.{{ end }}
+
+{{ if .SchemaSummary.Notes }}
+Notes
+------
+{{ range $index, $note := .SchemaSummary.Notes }}
+{{ add $index 1 }}. {{ $note }}
+{{ end }}
+{{ end }}

@@ -4,7 +4,7 @@ import yb
 
 def main():
 	yb.run_checks(migration_completed_checks)
-
+	yb.run_checks(YB_specific_checks)
 
 #=============================================================================
 
@@ -31,6 +31,8 @@ EXPECTED_ROW_COUNT = {
 EXPECTED_EXTENSION_SET = set([("pgcrypto",), ("pg_stat_statements",), ("plpgsql",)]) #  set of tuples
 EXPECTED_SCHEMA_SET = set([("hdb_catalog",), ("public",), ("ybvoyager_metadata",)])
 
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks(tgt):
  
