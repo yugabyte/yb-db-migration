@@ -26,8 +26,7 @@ import (
 	"testing"
 )
 
-var AssessmentDbSelectQuery = fmt.Sprintf("SELECT schema_name, object_name, row_count, reads_per_second, writes_per_second, "+
-	"is_index, parent_table_name, size_in_bytes FROM %v ORDER BY size_in_bytes ASC", TABLE_INDEX_STATS)
+var AssessmentDbSelectQuery = fmt.Sprintf("(?i)SELECT schema_name,.* FROM %v ORDER BY .* ASC", TABLE_INDEX_STATS)
 var AssessmentDBColumns = []string{"schema_name", "object_name", "row_count", "reads_per_second", "writes_per_second",
 	"is_index", "parent_table_name", "size_in_bytes"}
 
@@ -964,8 +963,8 @@ func TestGetReasoning_OnlyColocatedObjects(t *testing.T) {
 	recommendation := IntermediateRecommendation{VCPUsPerInstance: 8, MemoryPerCore: 8}
 	var shardedObjects []SourceDBMetadata
 	colocatedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 1000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 500}},
-		{Size: sql.NullFloat64{Float64: 30.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1500}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 1000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 500}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 30.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1500}},
 	}
 	expected := "Recommended instance type with 8 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
 		"explicit/implicit indexes) with 80.00 GB size and throughput requirement of 3000 reads/sec and " +
@@ -981,8 +980,8 @@ func TestGetReasoning_OnlyColocatedObjects(t *testing.T) {
 func TestGetReasoning_OnlyShardedObjects(t *testing.T) {
 	recommendation := IntermediateRecommendation{VCPUsPerInstance: 16, MemoryPerCore: 4}
 	shardedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 100.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 4000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 3000}},
-		{Size: sql.NullFloat64{Float64: 200.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 5000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 4000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 100.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 4000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 3000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 200.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 5000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 4000}},
 	}
 	var colocatedObjects []SourceDBMetadata
 	expected := "Recommended instance type with 16 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
@@ -999,11 +998,11 @@ func TestGetReasoning_OnlyShardedObjects(t *testing.T) {
 func TestGetReasoning_ColocatedAndShardedObjects(t *testing.T) {
 	recommendation := IntermediateRecommendation{VCPUsPerInstance: 32, MemoryPerCore: 2}
 	shardedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 150.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 7000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 6000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 150.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 7000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 6000}},
 	}
 	colocatedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 70.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
-		{Size: sql.NullFloat64{Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 70.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1000}},
 	}
 	expected := "Recommended instance type with 32 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
 		"explicit/implicit indexes) with 120.00 GB size and throughput requirement of 5000 reads/sec and " +
@@ -1021,10 +1020,10 @@ func TestGetReasoning_ColocatedAndShardedObjects(t *testing.T) {
 func TestGetReasoning_Indexes(t *testing.T) {
 	recommendation := IntermediateRecommendation{VCPUsPerInstance: 4, MemoryPerCore: 16}
 	shardedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 200.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 6000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 4000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 200.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 6000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 4000}},
 	}
 	colocatedObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 100.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
+		{Size: sql.NullFloat64{Valid: true, Float64: 100.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
 	}
 	expected := "Recommended instance type with 4 vCPU and 64 GiB memory could fit 1 objects(0 tables and " +
 		"1 explicit/implicit indexes) with 100.00 GB size and throughput requirement of 3000 reads/sec and " +
