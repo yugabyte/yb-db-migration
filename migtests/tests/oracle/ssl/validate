@@ -23,6 +23,10 @@ def migration_completed_checks_yb():
 	global db_schema
 	db_schema="public"
 	yb.run_checks(migration_completed_checks)
+	yb.run_checks(YB_specific_checks)
+
+def YB_specific_checks(tgt):
+	yb.verify_colocation(tgt, "oracle")
 
 def migration_completed_checks_ff():
 	print("Running tests on Oracle source replica")

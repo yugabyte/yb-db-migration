@@ -13,24 +13,32 @@ WHENEVER OSERROR EXIT FAILURE
 
 -- Select the data into the CSV file using inline views
 SPOOL table-index-sizes.csv
+
+-- Inline view to get the base tables, partitions, and subpartitions with correct naming
 SELECT schema_name, object_name, object_type, size_in_bytes
 FROM (
     SELECT
-        owner AS schema_name,
-        segment_name AS object_name,
-        'table' AS object_type,
-        bytes AS size_in_bytes
+        s.owner AS schema_name,
+        CASE
+            WHEN s.segment_type = 'TABLE' THEN s.segment_name
+            WHEN s.segment_type = 'TABLE PARTITION' THEN s.segment_name || '_' || s.partition_name
+            WHEN s.segment_type = 'TABLE SUBPARTITION' THEN s.segment_name || '_' || sp.partition_name || '_' || s.partition_name
+        END AS object_name,
+        s.segment_type AS object_type,
+        s.bytes AS size_in_bytes
     FROM
-        dba_segments
+        dba_segments s
+    LEFT JOIN
+        dba_tab_subpartitions sp ON s.owner = sp.table_owner AND s.segment_name = sp.table_name AND s.partition_name = sp.subpartition_name
     WHERE
-        segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
-        AND owner = '&1'
+        s.segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
+        AND s.owner = '&1'
     UNION ALL
     SELECT
         i.owner AS schema_name,
         i.index_name AS object_name,
-        'index' AS object_type,
-        s.bytes AS size_in_bytes
+        'INDEX' AS object_type,
+        SUM(s.bytes) AS size_in_bytes -- there can be multiple indexes with same name but on different partitions due to INDEX PARTITION so collating them into one
     FROM
         dba_indexes i
     JOIN
@@ -46,6 +54,7 @@ FROM (
         )
         AND i.index_name NOT LIKE 'SYS_%'
         AND i.index_name NOT LIKE 'DR$%'
+    GROUP BY i.owner, i.index_name
 );
 SPOOL OFF
 

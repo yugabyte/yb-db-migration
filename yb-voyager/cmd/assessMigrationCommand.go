@@ -164,6 +164,9 @@ func packAndSendAssessMigrationPayload(status string, errMsg string) {
 			DBSize:    source.DBSize,
 		}
 		payload.SourceDBDetails = callhome.MarshalledJsonString(sourceDBDetails)
+		assessPayload.SourceConnectivity = true
+	} else {
+		assessPayload.SourceConnectivity = false
 	}
 	payload.PhasePayload = callhome.MarshalledJsonString(assessPayload)
 	payload.Status = status
@@ -262,16 +265,9 @@ func assessMigration() (err error) {
 		return fmt.Errorf("failed to gather assessment metadata: %w", err)
 	}
 
-	err = source.DB().Connect()
-	if err != nil {
-		utils.ErrExit("error connecting source db: %v", err)
+	if assessmentMetadataDirFlag == "" { // only in case of source connectivity
+		fetchSourceInfo()
 	}
-	source.DBVersion = source.DB().GetVersion()
-	source.DBSize, err = source.DB().GetDatabaseSize()
-	if err != nil {
-		log.Errorf("error getting database size: %v", err) //can just log as this is used for call-home only
-	}
-	source.DB().Disconnect()
 
 	parseExportedSchemaFileForAssessmentIfRequired()
 
@@ -298,6 +294,19 @@ func assessMigration() (err error) {
 		return fmt.Errorf("failed to set migration assessment completed in MSR: %w", err)
 	}*/
 	return nil
+}
+
+func fetchSourceInfo() {
+	err := source.DB().Connect()
+	if err != nil {
+		utils.ErrExit("error connecting source db: %v", err)
+	}
+	source.DBVersion = source.DB().GetVersion()
+	source.DBSize, err = source.DB().GetDatabaseSize()
+	if err != nil {
+		log.Errorf("error getting database size: %v", err) //can just log as this is used for call-home only
+	}
+	source.DB().Disconnect()
 }
 
 func SetMigrationAssessmentDoneInMSR() error {
@@ -657,7 +666,7 @@ func populateMetadataCSVIntoAssessmentDB() error {
 	return nil
 }
 
-//go:embed assessmentReport.template
+//go:embed templates/assessmentReport.template
 var bytesTemplate []byte
 
 func generateAssessmentReport() (err error) {

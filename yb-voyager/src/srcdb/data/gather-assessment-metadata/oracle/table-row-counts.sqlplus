@@ -13,19 +13,23 @@ WHENEVER OSERROR EXIT FAILURE
 
 -- Select the data into the CSV file using inline views
 SPOOL table-row-counts.csv
-SELECT schema_name, table_name, row_count
-FROM (
-    SELECT 
-        owner AS schema_name,
-        table_name,
-        0 AS row_count
-    FROM 
-        dba_tables
-    WHERE 
-        owner = '&1'
-        AND table_name NOT LIKE 'DR$%'
-        AND table_name NOT LIKE 'AQ$%'
-);
+
+SELECT
+    s.owner AS schema_name,
+    CASE
+        WHEN s.segment_type = 'TABLE' THEN s.segment_name
+        WHEN s.segment_type = 'TABLE PARTITION' THEN s.segment_name || '_' || s.partition_name
+        WHEN s.segment_type = 'TABLE SUBPARTITION' THEN s.segment_name || '_' || sp.partition_name || '_' || s.partition_name
+    END AS table_name,
+    0 as row_count
+FROM
+    dba_segments s
+LEFT JOIN
+    dba_tab_subpartitions sp ON s.owner = sp.table_owner AND s.segment_name = sp.table_name AND s.partition_name = sp.subpartition_name
+WHERE
+    s.segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
+    AND s.owner = '&1';
+
 SPOOL OFF
 
 EXIT;

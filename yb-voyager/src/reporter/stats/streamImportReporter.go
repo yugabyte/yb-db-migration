@@ -28,22 +28,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/gosuri/uilive"
 	"github.com/samber/lo"
+
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
 type StreamImportStatsReporter struct {
 	sync.Mutex
-	migrationUUID          uuid.UUID
-	importerRole           string
-	totalEventsImported    int64
-	CurrImportedEvents     int64
-	startTime              time.Time
-	eventsSlidingWindow    [61]int64 // stores events per 10 secs for last 10 mins
-	remainingEvents        int64
-	estimatedTimeToCatchUp time.Duration
-	uitable                *uilive.Writer
-	metaDB                 *metadb.MetaDB
+	migrationUUID            uuid.UUID
+	importerRole             string
+	TotalEventsImported      int64
+	EventsImportRateLast3Min int64
+	CurrImportedEvents       int64
+	startTime                time.Time
+	eventsSlidingWindow      [61]int64 // stores events per 10 secs for last 10 mins
+	remainingEvents          int64
+	estimatedTimeToCatchUp   time.Duration
+	uitable                  *uilive.Writer
+	metaDB                   *metadb.MetaDB
 }
 
 func NewStreamImportStatsReporter(importerRole string) *StreamImportStatsReporter {
@@ -53,7 +55,7 @@ func NewStreamImportStatsReporter(importerRole string) *StreamImportStatsReporte
 func (s *StreamImportStatsReporter) Init(migrationUUID uuid.UUID, metaDB *metadb.MetaDB,
 	numInserts, numUpdates, numDeletes int64) error {
 	s.migrationUUID = migrationUUID
-	s.totalEventsImported = numInserts + numUpdates + numDeletes
+	s.TotalEventsImported = numInserts + numUpdates + numDeletes
 	s.startTime = time.Now()
 	s.metaDB = metaDB
 	return nil
@@ -101,7 +103,7 @@ func (s *StreamImportStatsReporter) refreshStats() {
 	fmt.Fprint(seperator1, color.GreenString("| %-30s | %30s |\n", "-----------------------------", "-----------------------------"))
 	fmt.Fprint(headerRow, color.GreenString("| %-30s | %30s |\n", "Metric", "Value"))
 	fmt.Fprint(seperator2, color.GreenString("| %-30s | %30s |\n", "-----------------------------", "-----------------------------"))
-	fmt.Fprint(row1, color.GreenString("| %-30s | %30s |\n", "Total Imported events", strconv.FormatInt(s.totalEventsImported, 10)))
+	fmt.Fprint(row1, color.GreenString("| %-30s | %30s |\n", "Total Imported events", strconv.FormatInt(s.TotalEventsImported, 10)))
 	fmt.Fprint(row2, color.GreenString("| %-30s | %30s |\n", "Events Imported in this Run", strconv.FormatInt(s.CurrImportedEvents, 10)))
 	var averageRateLast3Mins, averageRateLast10Mins int64
 	if elapsedTime < 3 {
@@ -137,8 +139,9 @@ func (s *StreamImportStatsReporter) BatchImported(numInserts, numUpdates, numDel
 	defer s.Mutex.Unlock()
 	total := numInserts + numUpdates + numDeletes
 	s.CurrImportedEvents += total
-	s.totalEventsImported += total
+	s.TotalEventsImported += total
 	s.eventsSlidingWindow[0] += total
+	s.EventsImportRateLast3Min = s.getIngestionRateForLastNMinutes(3) / 60 // this is just used for call-home stats
 }
 
 func (s *StreamImportStatsReporter) getIngestionRateForLastNMinutes(n int64) int64 {
@@ -162,7 +165,7 @@ func (s *StreamImportStatsReporter) UpdateRemainingEvents() {
 			utils.ErrExit("failed to fetch exported events stats from meta db: %v", err)
 		}
 	}
-	s.remainingEvents = totalExportedEvents - s.totalEventsImported
+	s.remainingEvents = totalExportedEvents - s.TotalEventsImported
 	lastMinIngestionRate := s.getIngestionRateForLastNMinutes(1)
 	if lastMinIngestionRate > 0 {
 		s.estimatedTimeToCatchUp = time.Duration(s.remainingEvents/lastMinIngestionRate) * time.Minute

@@ -144,7 +144,7 @@ def migration_completed_checks(tgt):
 	tgt.assert_all_values_of_col("null_and_default", "b", "public", expected_values=[False, None])
 
 def YB_specific_checks(tgt):
-	yb.verify_colocation(tgt)
+	yb.verify_colocation(tgt, "postgresql")
 
 if __name__ == "__main__":
 	main()

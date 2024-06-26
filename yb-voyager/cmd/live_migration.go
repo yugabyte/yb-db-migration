@@ -30,6 +30,7 @@ import (
 	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/metadb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/namereg"
 	reporter "github.com/yugabyte/yb-voyager/yb-voyager/src/reporter/stats"
@@ -175,6 +176,9 @@ func streamChangesFromSegment(
 		if event.IsCutoverToTarget() && importerRole == TARGET_DB_IMPORTER_ROLE ||
 			event.IsCutoverToSourceReplica() && importerRole == SOURCE_REPLICA_DB_IMPORTER_ROLE ||
 			event.IsCutoverToSource() && importerRole == SOURCE_DB_IMPORTER_ROLE { // cutover or fall-forward command
+
+			updateCallhomeImportPhase(event)
+
 			eventQueue.EndOfQueue = true
 			segment.MarkProcessed()
 			break
@@ -200,6 +204,21 @@ func streamChangesFromSegment(
 	}
 	log.Infof("finished streaming changes from segment %s\n", filepath.Base(segment.FilePath))
 	return nil
+}
+
+func updateCallhomeImportPhase(event *tgtdb.Event) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	switch true {
+	case event.IsCutoverToTarget() && importerRole == TARGET_DB_IMPORTER_ROLE:
+		importPhase = CUTOVER_TO_TARGET
+	case event.IsCutoverToSourceReplica() && importerRole == SOURCE_REPLICA_DB_IMPORTER_ROLE:
+		importPhase = CUTOVER_TO_SOURCE_REPLICA
+	case event.IsCutoverToSource() && importerRole == SOURCE_DB_IMPORTER_ROLE:
+		importPhase = CUTOVER_TO_SOURCE
+	}
+
 }
 
 func shouldFormatValues(event *tgtdb.Event) bool {

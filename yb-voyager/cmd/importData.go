@@ -54,6 +54,7 @@ var batchImportPool *pool.Pool
 var tablesProgressMetadata map[string]*utils.TableProgressMetadata
 var importerRole string
 var identityColumnsMetaDBKey string
+var importPhase string
 
 // stores the data files description in a struct
 var dataFileDescriptor *datafile.Descriptor
@@ -158,6 +159,8 @@ func importDataCommandFn(cmd *cobra.Command, args []string) {
 	} else {
 		importFileTasks = applyTableListFilter(importFileTasks)
 	}
+
+	importPhase = dbzm.MODE_SNAPSHOT
 
 	importData(importFileTasks)
 	tdb.Finalize()
@@ -526,7 +529,7 @@ func importData(importFileTasks []*ImportFileTask) {
 			if importerRole != SOURCE_DB_IMPORTER_ROLE {
 				displayImportedRowCountSnapshot(state, importFileTasks)
 			}
-
+			importPhase = dbzm.MODE_STREAMING
 			color.Blue("streaming changes to %s...", tconf.TargetDBType)
 
 			if err != nil {
@@ -573,10 +576,15 @@ func importData(importFileTasks []*ImportFileTask) {
 
 	fmt.Printf("\nImport data complete.\n")
 
-	if importerRole == TARGET_DB_IMPORTER_ROLE {
+	switch importerRole {
+	case TARGET_DB_IMPORTER_ROLE:
 		importDataCompletedEvent := createSnapshotImportCompletedEvent()
 		controlPlane.SnapshotImportCompleted(&importDataCompletedEvent)
-		packAndSendImportDataPayload(COMPLETE) // TODO: later for other import data commands
+		packAndSendImportDataPayload(COMPLETE)
+	case SOURCE_REPLICA_DB_IMPORTER_ROLE:
+		packAndSendImportDataToSrcReplicaPayload(COMPLETE)
+	case SOURCE_DB_IMPORTER_ROLE:
+		packAndSendImportDataToSourcePayload(COMPLETE)
 	}
 
 }
@@ -592,7 +600,7 @@ func packAndSendImportDataPayload(status string) {
 	case SNAPSHOT_ONLY:
 		payload.MigrationType = OFFLINE
 	case SNAPSHOT_AND_CHANGES:
-		payload.MigrationType = LIVE_MIGRATION //TODO: add FF/FB details
+		payload.MigrationType = LIVE_MIGRATION
 	}
 	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
 	payload.MigrationPhase = IMPORT_DATA_PHASE
@@ -613,6 +621,13 @@ func packAndSendImportDataPayload(status string) {
 			}
 			return true, nil
 		})
+	}
+
+	importDataPayload.Phase = importPhase
+
+	if importPhase != dbzm.MODE_SNAPSHOT {
+		importDataPayload.EventsImportRate = statsReporter.EventsImportRateLast3Min
+		importDataPayload.TotalImportedEvents = statsReporter.TotalEventsImported
 	}
 
 	payload.PhasePayload = callhome.MarshalledJsonString(importDataPayload)

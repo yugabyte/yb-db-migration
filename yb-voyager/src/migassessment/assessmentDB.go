@@ -210,14 +210,14 @@ const (
 		trc.table_name AS object_name,
 		trc.row_count,
 		tcc.column_count,
-		COALESCE(tii.seq_reads, 0) AS reads,
-		COALESCE(tii.row_writes, 0) AS writes,
-		0 AS reads_per_second,
-		0 as writes_per_second,
+		tii.seq_reads AS reads,
+		tii.row_writes AS writes,
+		NULL AS reads_per_second,
+		NULL as writes_per_second,
 		0 AS is_index,
 		otm.object_type,
 		NULL AS parent_table_name,
-		COALESCE(tis.size_in_bytes, 0)
+		tis.size_in_bytes
 	FROM %s trc
 	LEFT JOIN %s tii ON trc.schema_name = tii.schema_name AND trc.table_name = tii.object_name and tii.measurement_type='initial'
 	LEFT JOIN %s tis ON trc.schema_name = tis.schema_name AND trc.table_name = tis.object_name
@@ -232,10 +232,10 @@ const (
 		itm.index_name AS object_name,
 		NULL AS row_count,
 		tcc.column_count,
-		COALESCE(tii.seq_reads, 0) AS reads,
-		COALESCE(tii.row_writes, 0) AS writes,
-		0 AS reads_per_second,
-		0 as writes_per_second,
+		tii.seq_reads AS reads,
+		tii.row_writes AS writes,
+		NULL AS reads_per_second,
+		NULL as writes_per_second,
 		1 AS is_index,
 		otm.object_type,
 		itm.table_schema || '.' || itm.table_name AS parent_table_name,
@@ -302,6 +302,7 @@ func (adb *AssessmentDB) PopulateMigrationAssessmentStats() error {
 	}
 
 	for _, stmt := range statements {
+		log.Infof("executing query for populating migration assessment stats- %s", stmt)
 		if _, err := adb.db.Exec(stmt); err != nil {
 			return fmt.Errorf("error executing statement-%s: %w", stmt, err)
 		}

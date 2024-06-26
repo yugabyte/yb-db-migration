@@ -144,10 +144,12 @@ parse_oracle_dsn() {
 # this function checks the PIPESTATUS[0] of the first command
 run_command() {
     local command="$1"
+    local file_to_print="${2:-}" # print if error
     # print and log the stderr/stdout of the command
     eval $command 2>&1 | tee -a "$LOG_FILE"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        log "ERROR" "command failed: $command"
+        print_and_log "ERROR" "command failed: $command"
+        cat "$file_to_print" | tee -a "$LOG_FILE"
         exit 1
     fi
 }
@@ -181,15 +183,15 @@ main() {
     for script in $SCRIPT_DIR/*.sqlplus; do # Loop through each SQLPlus script and execute it
         script_name=$(basename "$script" .sqlplus)
         script_action=$(basename "$script" .sqlplus | sed 's/-/ /g')
+        csv_file_path="$assessment_metadata_dir/${script_name%.sqlplus}.csv"
         print_and_log "INFO" "Collecting $script_action..."
         sqlplus_command="sqlplus -S $oracle_connection_string @$script $schema_name"
         log "INFO" "executing sqlplus_command: $sqlplus_command"
-        run_command "$sqlplus_command"
+        run_command "$sqlplus_command" "$csv_file_path"
 
         # Post-processing step to remove the first line if it's empty in the generated CSV file
-        csv_file_path="$assessment_metadata_dir/${script_name%.sqlplus}.csv"
-        log "INFO" "remove first line(empty) from csv_file '$csv_file_path'"
         if [ -f "$csv_file_path" ]; then
+            log "INFO" "remove first line(empty) from csv_file '$csv_file_path'"
             sed -i '1{/^$/d}' "$csv_file_path"
         else
             log "INFO" "csv_file '$csv_file_path' does not exist"

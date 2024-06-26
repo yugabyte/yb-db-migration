@@ -33,7 +33,7 @@ EXPECTED_INDEX_COUNT = {
 }
 
 def YB_specific_checks(tgt):
-	yb.verify_colocation(tgt)
+	yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks(tgt):
 	got_row_count = tgt.row_count_of_all_tables("public")

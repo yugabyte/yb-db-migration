@@ -1072,19 +1072,52 @@ func PackAndSendCallhomePayloadOnExit() {
 		packAndSendImportSchemaPayload(EXIT, "Exiting....")
 	case exportDataCmd.CommandPath(), exportDataFromSrcCmd.CommandPath():
 		packAndSendExportDataPayload(EXIT)
+	case exportDataFromTargetCmd.CommandPath():
+		packAndSendExportDataFromTargetPayload(EXIT)
 	case importDataCmd.CommandPath(), importDataToTargetCmd.CommandPath():
 		packAndSendImportDataPayload(EXIT)
+	case importDataToSourceCmd.CommandPath():
+		packAndSendImportDataToSourcePayload(EXIT)
+	case importDataToSourceReplicaCmd.CommandPath():
+		packAndSendImportDataToSrcReplicaPayload(EXIT)
 	case endMigrationCmd.CommandPath():
 		packAndSendEndMigrationPayload(EXIT)
 	case importDataFileCmd.CommandPath():
 		packAndSendImportDataFilePayload(EXIT)
-		//..more cases
 	}
 }
 
 func updateExportSnapshotDataStatsInPayload(exportDataPayload *callhome.ExportDataPhasePayload) {
 	//Updating the payload with totalRows and LargestTableRows for both debezium/non-debezium case
-	if useDebezium {
+	if !useDebezium || (changeStreamingIsEnabled(exportType) && source.DBType == POSTGRESQL) { 
+		//non-debezium and pg live migration snapshot case reading the export_snapshot_status.json file
+		if exportSnapshotStatusFile != nil {
+			exportStatusSnapshot, err := exportSnapshotStatusFile.Read()
+			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) {
+					log.Errorf("callhome: failed to read export status file: %v", err)
+				}
+			} else {
+				exportedSnapshotRow, _, err := getExportedSnapshotRowsMap(exportStatusSnapshot)
+				if err != nil {
+					log.Errorf("callhome: error while getting exported snapshot rows map: %v", err)
+				}
+				exportedSnapshotRow.IterKV(func(key sqlname.NameTuple, value int64) (bool, error) {
+					exportDataPayload.TotalRows += value
+					if value >= exportDataPayload.LargestTableRows {
+						exportDataPayload.LargestTableRows = value
+					}
+					return true, nil
+				})
+			}
+		}
+		switch source.DBType {
+		case POSTGRESQL:
+			exportDataPayload.ExportSnapshotMechanism = "pg_dump"
+		case ORACLE, MYSQL:
+			exportDataPayload.ExportSnapshotMechanism = "ora2pg"
+		}
+	} else {
 		//debezium case reading export_status.json file
 		exportStatusFilePath := filepath.Join(exportDir, "data", "export_status.json")
 		dbzmStatus, err := dbzm.ReadExportStatus(exportStatusFilePath)
@@ -1099,34 +1132,7 @@ func updateExportSnapshotDataStatsInPayload(exportDataPayload *callhome.ExportDa
 				}
 			}
 		}
-		exportDataPayload.ExportDataMechanism = "debezium"
-	} else {
-		//non-debezium case reading the export_snapshot_status.json file
-		if exportSnapshotStatusFile != nil {
-			exportStatusSnapshot, err := exportSnapshotStatusFile.Read()
-			if err != nil {
-				if !errors.Is(err, fs.ErrNotExist) {
-					log.Errorf("callhome: failed to read export status file: %v", err)
-				}
-			}
-			exportedSnapshotRow, _, err := getExportedSnapshotRowsMap(exportStatusSnapshot)
-			if err != nil {
-				log.Errorf("callhome: error while getting exported snapshot rows map: %v", err)
-			}
-			exportedSnapshotRow.IterKV(func(key sqlname.NameTuple, value int64) (bool, error) {
-				exportDataPayload.TotalRows += value
-				if value >= exportDataPayload.LargestTableRows {
-					exportDataPayload.LargestTableRows = value
-				}
-				return true, nil
-			})
-		}
-		switch source.DBType {
-		case POSTGRESQL:
-			exportDataPayload.ExportDataMechanism = "pg_dump"
-		case ORACLE, MYSQL:
-			exportDataPayload.ExportDataMechanism = "ora2pg"
-		}
+		exportDataPayload.ExportSnapshotMechanism = "debezium"
 	}
 }
 
@@ -1140,8 +1146,14 @@ func sendCallhomePayloadAtIntervals() {
 		switch currentCommand {
 		case exportDataCmd.CommandPath(), exportDataFromSrcCmd.CommandPath():
 			packAndSendExportDataPayload(INPROGRESS)
+		case exportDataFromTargetCmd.CommandPath():
+			packAndSendExportDataFromTargetPayload(INPROGRESS)
 		case importDataCmd.CommandPath(), importDataToTargetCmd.CommandPath():
 			packAndSendImportDataPayload(INPROGRESS)
+		case importDataToSourceCmd.CommandPath():
+			packAndSendImportDataToSourcePayload(INPROGRESS)
+		case importDataToSourceReplicaCmd.CommandPath():
+			packAndSendImportDataToSrcReplicaPayload(INPROGRESS)
 		case importDataFileCmd.CommandPath():
 			packAndSendImportDataFilePayload(INPROGRESS)
 		}

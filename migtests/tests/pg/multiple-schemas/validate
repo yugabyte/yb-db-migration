@@ -37,7 +37,7 @@ def migration_completed_checks_yb():
 	yb.run_checks(YB_specific_checks)
 
 def YB_specific_checks(tgt):
-	yb.verify_colocation(tgt)
+	yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks_ff():
 	print("Running tests on PG source replica")

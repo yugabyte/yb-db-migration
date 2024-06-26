@@ -44,7 +44,7 @@ EXPECTED_COUNTS = {
 }
 
 def YB_specific_checks(tgt):
-    yb.verify_colocation(tgt)
+    yb.verify_colocation(tgt, "postgresql")
 
 def check_validations_per_schema(tgt, schema_name) -> None:
 

@@ -72,7 +72,6 @@ def migration_completed_checks_yb():
 	global db_schema
 	db_schema="test_schema"
 	yb.run_checks(migration_completed_checks)
- 
 
 def migration_completed_checks_ff():
 	print("Running tests on Oracle source replica")

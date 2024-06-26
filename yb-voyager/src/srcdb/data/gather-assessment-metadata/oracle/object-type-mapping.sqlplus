@@ -16,15 +16,21 @@ SPOOL object-type-mapping.csv
 SELECT schema_name, object_name, object_type
 FROM (
     SELECT
-        owner AS schema_name,
-        -- TODO: handle the partitioned table support later
-        object_name || NVL2(subobject_name, '_' || subobject_name, '') AS object_name,
-        object_type
+        o.owner AS schema_name,
+        CASE
+            WHEN o.object_type = 'TABLE' THEN o.object_name
+            WHEN o.object_type = 'TABLE PARTITION' THEN o.object_name || '_' || o.subobject_name
+            WHEN o.object_type = 'TABLE SUBPARTITION' THEN o.object_name || '_' || sp.partition_name || '_' || o.subobject_name
+            ELSE o.object_name || NVL2(o.subobject_name, '_' || o.subobject_name, '')
+        END AS object_name,
+        o.object_type
     FROM
-        dba_objects
+        dba_objects o
+    LEFT JOIN
+        dba_tab_subpartitions sp ON o.owner = sp.table_owner AND o.object_name = sp.table_name AND o.subobject_name = sp.subpartition_name
     WHERE
-        owner = '&1'
-        AND object_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION', 'INDEX PARTITION')
+        o.owner = '&1'
+        AND o.object_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
     UNION ALL
     SELECT
         owner AS schema_name,

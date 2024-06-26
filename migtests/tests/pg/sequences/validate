@@ -98,7 +98,7 @@ NUM_SEQUENCES = {
 }
 
 def YB_specific_checks(tgt):
-    yb.verify_colocation(tgt)
+    yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks_per_schema(tgt, schema):
     print("check for schema: ", schema)

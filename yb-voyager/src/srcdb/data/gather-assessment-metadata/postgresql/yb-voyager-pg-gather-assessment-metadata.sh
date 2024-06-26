@@ -114,7 +114,7 @@ run_command() {
     # print and log the stderr/stdout of the command
     eval $command 2>&1 | tee -a "$LOG_FILE"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        log "ERROR" "command failed: $command"
+        print_and_log "ERROR" "command failed: $command"
         exit 1
     fi
 }

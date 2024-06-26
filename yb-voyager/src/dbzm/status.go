@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/samber/lo"
+
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
@@ -68,13 +69,13 @@ func ReadExportStatus(statusFilePath string) (*ExportStatus, error) {
 	return &status, nil
 }
 
-func IsLiveMigrationInSnapshotMode(exportDir string) bool {
+func IsLiveMigrationInSnapshotMode(exportDir string) (bool, error) {
 	statusFilePath := filepath.Join(exportDir, "data", "export_status.json")
 	status, err := ReadExportStatus(statusFilePath)
 	if err != nil {
-		utils.ErrExit("Failed to read export status file %s: %v", statusFilePath, err)
+		return false, fmt.Errorf("failed to read export status file %s: %v", statusFilePath, err)
 	}
-	return status != nil && status.Mode == MODE_SNAPSHOT
+	return (status != nil && status.Mode == MODE_SNAPSHOT), nil
 }
 
 func IsMigrationInStreamingMode(exportDir string) bool {

@@ -48,7 +48,7 @@ QUERIES_CHECK = {
 }	
 
 def YB_specific_checks(tgt):
-	yb.verify_colocation(tgt)
+	yb.verify_colocation(tgt, "postgresql")
 
 def migration_completed_checks(tgt):
 	table_list = tgt.get_table_names("public")

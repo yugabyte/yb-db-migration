@@ -15,24 +15,52 @@ WHENEVER OSERROR EXIT FAILURE
 SPOOL table-columns-count.csv
 SELECT schema_name, object_name, object_type, column_count
 FROM (
-    SELECT 
+    SELECT
         t.owner AS schema_name,
         t.table_name AS object_name,
-        'table' AS object_type,
+        'TABLE' AS object_type,
         COUNT(*) AS column_count
-    FROM 
+    FROM
         dba_tab_columns t
     JOIN
         dba_tables tab ON t.owner = tab.owner AND t.table_name = tab.table_name
-    WHERE 
+    WHERE
         t.owner = '&1'
-    GROUP BY 
+    GROUP BY
         t.owner, t.table_name
+    UNION ALL
+    SELECT
+        t.owner AS schema_name,
+        t.table_name || '_' || p.partition_name AS object_name,
+        'TABLE PARTITION' AS object_type,
+        COUNT(*) AS column_count
+    FROM
+        dba_tab_columns t
+    JOIN
+        dba_tab_partitions p ON t.owner = p.table_owner AND t.table_name = p.table_name
+    WHERE
+        t.owner = '&1'
+    GROUP BY
+        t.owner, t.table_name, p.partition_name
+    UNION ALL
+    SELECT
+        t.owner AS schema_name,
+        t.table_name || '_' || sp.partition_name || '_' || sp.subpartition_name AS object_name,
+        'TABLE SUBPARTITION' AS object_type,
+        COUNT(*) AS column_count
+    FROM
+        dba_tab_columns t
+    JOIN
+        dba_tab_subpartitions sp ON t.owner = sp.table_owner AND t.table_name = sp.table_name
+    WHERE
+        t.owner = '&1'
+    GROUP BY
+        t.owner, t.table_name, sp.partition_name, sp.subpartition_name
     UNION ALL
     SELECT
         i.index_owner AS schema_name,
         i.index_name AS object_name,
-        'index' AS object_type,
+        'INDEX' AS object_type,
         COUNT(*) AS column_count
     FROM
         dba_ind_columns i

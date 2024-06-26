@@ -49,6 +49,7 @@ import (
 )
 
 var exporterRole string = SOURCE_DB_EXPORTER_ROLE
+var exportPhase string
 
 var exportDataCmd = &cobra.Command{
 	Use: "data",
@@ -127,7 +128,7 @@ func exportDataCommandFn(cmd *cobra.Command, args []string) {
 
 	success := exportData()
 	if success {
-		packAndSendExportDataPayload(COMPLETE)
+		sendPayloadAsPerExporterRole(COMPLETE)
 
 		setDataIsExported()
 		color.Green("Export of data complete")
@@ -135,12 +136,23 @@ func exportDataCommandFn(cmd *cobra.Command, args []string) {
 		startFallBackSetupIfRequired()
 	} else if ProcessShutdownRequested {
 		log.Info("Shutting down as SIGINT/SIGTERM received.")
-		packAndSendExportDataPayload(EXIT)
 	} else {
 		color.Red("Export of data failed! Check %s/logs for more details.", exportDir)
 		log.Error("Export of data failed.")
-		packAndSendExportDataPayload(ERROR)
+		sendPayloadAsPerExporterRole(ERROR)
 		atexit.Exit(1)
+	}
+}
+
+func sendPayloadAsPerExporterRole(status string) {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	switch exporterRole {
+	case SOURCE_DB_EXPORTER_ROLE:
+		packAndSendExportDataPayload(status)
+	case TARGET_DB_EXPORTER_FB_ROLE, TARGET_DB_EXPORTER_FF_ROLE:
+		packAndSendExportDataFromTargetPayload(status)
 	}
 }
 
@@ -173,6 +185,12 @@ func packAndSendExportDataPayload(status string) {
 	}
 
 	updateExportSnapshotDataStatsInPayload(&exportDataPayload)
+
+	exportDataPayload.Phase = exportPhase
+	if exportPhase != dbzm.MODE_SNAPSHOT {
+		exportDataPayload.TotalExportedEvents = totalEventCount
+		exportDataPayload.EventsExportRate = throughputInLast3Min
+	}
 
 	payload.PhasePayload = callhome.MarshalledJsonString(exportDataPayload)
 	payload.Status = status
@@ -277,6 +295,7 @@ func exportData() bool {
 	//finalTableList is with leaf partitions and root tables after this in the whole export flow to make all the catalog queries work fine
 
 	if changeStreamingIsEnabled(exportType) || useDebezium {
+		exportPhase = dbzm.MODE_SNAPSHOT
 		config, tableNametoApproxRowCountMap, err := prepareDebeziumConfig(partitionsToRootTableMap, finalTableList, tablesColumnList, leafPartitions)
 		if err != nil {
 			log.Errorf("Failed to prepare dbzm config: %v", err)
@@ -351,11 +370,15 @@ func exportData() bool {
 			if err != nil {
 				utils.ErrExit("failed to create trigger file after data export: %v", err)
 			}
+
+			updateCallhomeExportPhase()
+
 			utils.PrintAndLog("\nRun the following command to get the current report of the migration:\n" +
 				color.CyanString("yb-voyager get data-migration-report --export-dir %q\n", exportDir))
 		}
 		return true
 	} else {
+		exportPhase = dbzm.MODE_SNAPSHOT
 		err = storeTableListInMSR(finalTableList)
 		if err != nil {
 			utils.ErrExit("store table list in MSR: %v", err)
@@ -367,6 +390,21 @@ func exportData() bool {
 		}
 		return true
 	}
+}
+
+func updateCallhomeExportPhase() {
+	if !callhome.SendDiagnostics {
+		return
+	}
+	switch exporterRole {
+	case SOURCE_DB_EXPORTER_ROLE:
+		exportPhase = CUTOVER_TO_TARGET
+	case TARGET_DB_EXPORTER_FF_ROLE:
+		exportPhase = CUTOVER_TO_SOURCE_REPLICA
+	case TARGET_DB_EXPORTER_FB_ROLE:
+		exportPhase = CUTOVER_TO_SOURCE
+	}
+
 }
 
 // required only for postgresql/yugabytedb since GetAllTables() returns all tables and partitions

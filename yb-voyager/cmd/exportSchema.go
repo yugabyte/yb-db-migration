@@ -35,6 +35,7 @@ import (
 
 var skipRecommendations utils.BoolStr
 var assessmentReportPath string
+var assessmentRecommendationsApplied bool
 
 var exportSchemaCmd = &cobra.Command{
 	Use: "schema",
@@ -155,8 +156,9 @@ func packAndSendExportSchemaPayload(status string) {
 	payload.SourceDBDetails = callhome.MarshalledJsonString(sourceDBDetails)
 	exportSchemaPayload := callhome.ExportSchemaPhasePayload{
 		StartClean:             bool(startClean),
-		AppliedRecommendations: !bool(skipRecommendations),
+		AppliedRecommendations: assessmentRecommendationsApplied,
 	}
+
 	payload.PhasePayload = callhome.MarshalledJsonString(exportSchemaPayload)
 
 	err := callhome.SendPayload(&payload)
@@ -242,6 +244,8 @@ func applyMigrationAssessmentRecommendations() error {
 	if skipRecommendations {
 		log.Infof("not apply recommendations due to flag --skip-recommendations=true")
 		return nil
+	} else if source.DBType == MYSQL {
+		return nil
 	}
 
 	// TODO: copy the reports to "export-dir/assessment/reports" for further usage
@@ -268,6 +272,7 @@ func applyMigrationAssessmentRecommendations() error {
 			return fmt.Errorf("failed to apply colocated vs sharded table recommendation: %w", err)
 		}
 	}
+	assessmentRecommendationsApplied = true
 	utils.PrintAndLog("Applied assessment recommendations.")
 
 	return nil
@@ -378,12 +383,33 @@ func applyShardingRecommendationIfMatching(sqlInfo *sqlInfo, shardedTables []str
 		return formattedStmt, false, nil
 	}
 	createTableStmt := createStmtNode.CreateStmt
-
-	// Extract schema and table name
 	relation := createTableStmt.Relation
-	parsedTableName := relation.Schemaname + "." + relation.Relname
-	if !slices.Contains(shardedTables, parsedTableName) {
+
+	// true -> oracle, false -> PG
+	parsedTableName := lo.Ternary(relation.Schemaname == "", relation.Relname,
+		relation.Schemaname+"."+relation.Relname)
+
+	match := false
+	switch source.DBType {
+	case POSTGRESQL:
+		match = slices.Contains(shardedTables, parsedTableName)
+	case ORACLE:
+		// TODO: handle case-sensitivity properly
+		for _, shardedTable := range shardedTables {
+			parts := strings.Split(shardedTable, ".")
+			if strings.ToLower(parts[1]) == parsedTableName {
+				match = true
+				break
+			}
+		}
+	default:
+		panic(fmt.Sprintf("unsupported source db type %s for applying sharding recommendations", source.DBType))
+	}
+	if !match {
+		log.Infof("%q not present in the sharded table list", parsedTableName)
 		return formattedStmt, false, nil
+	} else {
+		log.Infof("%q present in the sharded table list", parsedTableName)
 	}
 
 	colocationOption := &pg_query.DefElem{

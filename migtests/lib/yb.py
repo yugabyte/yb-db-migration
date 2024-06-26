@@ -50,7 +50,7 @@ def new_source_db():
 		env.get("SOURCE_DB_PASSWORD", "secret"),
 		env["SOURCE_DB_NAME"])
 
-def verify_colocation(tgt):
+def verify_colocation(tgt, source_db_type):
 	print("Verifying the colocation of the tables")
 	json_file = "export-dir/assessment/reports/assessmentReport.json"
 
@@ -59,13 +59,29 @@ def verify_colocation(tgt):
 	print("Sharded Tables: ", sharded_tables)
 	print("Colocated Tables: ", colocated_tables)
 
+	def convert_table_to_lowercase_if_needed(name):
+        # Convert to lowercase if not quoted in case of oracle
+		if not (name.startswith('"') and name.endswith('"')):
+			return name.lower()
+		return name
+
 	for table in sharded_tables:
+		print(f"verifying for sharded table: {table}")
 		schema_name, table_name = table.split(".")
+		if source_db_type == "oracle":
+			schema_name = os.environ.get("TARGET_DB_SCHEMA", "public")
+			table_name = convert_table_to_lowercase_if_needed(table_name)
+		print(f"schema_name: {schema_name}, table_name: {table_name}")
 		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
 		assert not actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: False, Actual: {actual_colocation}"
 
 	for table in colocated_tables:
+		print(f"verifying for colocated table: {table}")
 		schema_name, table_name = table.split(".")
+		if source_db_type == "oracle":
+			schema_name = os.environ.get("TARGET_DB_SCHEMA", "public")
+			table_name = convert_table_to_lowercase_if_needed(table_name)
+		print(f"schema_name: {schema_name}, table_name: {table_name}")
 		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
 		assert actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: True, Actual: {actual_colocation}"
 
