@@ -199,42 +199,39 @@ func SizingAssessment(assessmentDir string) error {
 		getListOfIndexesAlongWithObjects(finalSizingRecommendation.ShardedTables, sourceIndexMetadata)
 
 	// get load times data from experimental database for sharded Tables
-	colocatedLoadTimes, err :=
-		getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
-			finalSizingRecommendation.MemoryPerCore, COLOCATED_LOAD_TIME_TABLE)
+	colocatedLoadTimes, err := getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
+		finalSizingRecommendation.MemoryPerCore, COLOCATED_LOAD_TIME_TABLE)
 	if err != nil {
 		return fmt.Errorf("error while fetching sharded load time info: %w", err)
 	}
 
 	// get load times data from experimental database for sharded Tables
-	shardedLoadTimes, err :=
-		getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
-			finalSizingRecommendation.MemoryPerCore, SHARDED_LOAD_TIME_TABLE)
+	shardedLoadTimes, err := getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
+		finalSizingRecommendation.MemoryPerCore, SHARDED_LOAD_TIME_TABLE)
 	if err != nil {
 		return fmt.Errorf("error while fetching sharded load time info: %w", err)
 	}
 
 	// get experimental data for impact of indexes on colocated tables load
-	indexImpactOnLoadTimeCommon, err :=
-		getExpDataIndexImpactOnLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
-			finalSizingRecommendation.MemoryPerCore)
+	indexImpactOnLoadTimeCommon, err := getExpDataIndexImpactOnLoadTime(experimentDB,
+		finalSizingRecommendation.VCPUsPerInstance, finalSizingRecommendation.MemoryPerCore)
 	if err != nil {
 		return fmt.Errorf("error while fetching experiment data for impact of index on load time: %w", err)
 	}
 
 	// calculate time taken for colocated import
-	importTimeForColocatedObjects, parallelVoyagerJobsColocated, err :=
-		calculateTimeTakenAndParallelJobsForImport(finalSizingRecommendation.ColocatedTables, sourceIndexMetadata,
-			colocatedLoadTimes, indexImpactOnLoadTimeCommon, COLOCATED)
+	importTimeForColocatedObjects, parallelVoyagerJobsColocated, err := calculateTimeTakenAndParallelJobsForImport(
+		finalSizingRecommendation.ColocatedTables, sourceIndexMetadata, colocatedLoadTimes,
+		indexImpactOnLoadTimeCommon, COLOCATED)
 	if err != nil {
 		SizingReport.FailureReasoning = fmt.Sprintf("calculate time taken for colocated data import: %v", err)
 		return fmt.Errorf("calculate time taken for colocated data import: %w", err)
 	}
 
 	// calculate time taken for sharded import
-	importTimeForShardedObjects, parallelVoyagerJobsSharded, err :=
-		calculateTimeTakenAndParallelJobsForImport(finalSizingRecommendation.ShardedTables, sourceIndexMetadata,
-			shardedLoadTimes, indexImpactOnLoadTimeCommon, SHARDED)
+	importTimeForShardedObjects, parallelVoyagerJobsSharded, err := calculateTimeTakenAndParallelJobsForImport(
+		finalSizingRecommendation.ShardedTables, sourceIndexMetadata, shardedLoadTimes,
+		indexImpactOnLoadTimeCommon, SHARDED)
 	if err != nil {
 		SizingReport.FailureReasoning = fmt.Sprintf("calculate time taken for sharded data import: %v", err)
 		return fmt.Errorf("calculate time taken for sharded data import: %w", err)
@@ -904,10 +901,11 @@ func calculateTimeTakenAndParallelJobsForImport(tables []SourceDBMetadata,
 		tableSize := lo.Ternary(table.Size.Valid, table.Size.Float64, 0)
 		closestLoadTime := findClosestRecordFromExpDataLoadTime(loadTimes, tableSize)
 		// get multiplication factor for every table based on the number of indexes
-		loadTimeMultiplicationFactor :=
-			getMultiplicationFactorForImportTimeBasedOnIndexes(table, sourceIndexMetadata, indexImpacts, objectType)
+		loadTimeMultiplicationFactor := getMultiplicationFactorForImportTimeBasedOnIndexes(table, sourceIndexMetadata,
+			indexImpacts, objectType)
 		// calculate the time taken for import for every table and add it to overall import time
-		importTime += loadTimeMultiplicationFactor * ((closestLoadTime.migrationTimeSecs.Float64 * tableSize) / closestLoadTime.csvSizeGB.Float64) / 60
+		importTime += loadTimeMultiplicationFactor * ((closestLoadTime.migrationTimeSecs.Float64 * tableSize) /
+			closestLoadTime.csvSizeGB.Float64) / 60
 	}
 
 	return math.Ceil(importTime), loadTimes[0].parallelThreads.Int64, nil
