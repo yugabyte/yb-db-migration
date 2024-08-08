@@ -796,43 +796,6 @@ func TestPickBestRecommendation_PickLastMaxCoreRecommendationWhenNoneCanSupport(
 /*
 ===== 	Test functions to test calculateTimeTakenAndParallelJobsForImportColocatedObjects function	=====
 */
-// validate the formula to calculate the import time for Colocated Objects
-func TestCalculateTimeTakenAndParallelJobsForImportColocatedObjects_ValidateFormulaToCalculateImportTime(t *testing.T) {
-	db, mock := createMockDB(t)
-	// Define the mock response for the query
-	rows := sqlmock.NewRows([]string{"csv_size_gb", "migration_time_secs", "parallel_threads"}).
-		AddRow(100, 6000, 4)
-	mock.ExpectQuery(
-		"(?i)SELECT csv_size_gb, migration_time_secs, parallel_threads FROM .* WHERE num_cores = .*").
-		WithArgs(4, 4, 50.0, 4).
-		WillReturnRows(rows)
-
-	// Define test data
-	dbObjects := []SourceDBMetadata{
-		{Size: sql.NullFloat64{Float64: 30.0, Valid: true}},
-		{Size: sql.NullFloat64{Float64: 20.0, Valid: true}},
-	}
-
-	// Call the function
-	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImportColocatedObjects(dbObjects, 4, 4, db)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
-	// Define expected results
-	expectedTime := 50.0 // Calculated as ((6000 * 50) / 100) / 60
-	expectedJobs := int64(4)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
-	}
-
-	// Ensure all expectations were met
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("There were unfulfilled expectations: %s", err)
-	}
-}
 
 /*
 ===== 	Test functions to test calculateTimeTakenAndParallelJobsForImportShardedObjects function	=====

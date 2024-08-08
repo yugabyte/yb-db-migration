@@ -872,69 +872,6 @@ func createSizingRecommendationStructure(colocatedLimits []ExpDataColocatedLimit
 }
 
 /*
-calculateTimeTakenAndParallelJobsForImportColocatedObjects estimates the time taken for import of database objects based on their type, size,
-and the specified CPU and memory configurations. It calculates the total size of the database objects to be migrated,
-then queries experimental data to find import time estimates for similar object sizes and configurations. The
-function adjusts the import time based on the ratio of the total size of the objects to be migrated to the maximum
-size found in the experimental data. The import time is then converted from seconds to minutes and returned.
-Parameters:
-
-	tableName: A string indicating the type of database objects to be imported (e.g., "colocated" or "sharded").
-	dbObjects: A slice containing metadata for the database objects to be migrated.
-	vCPUPerInstance: The number of virtual CPUs per instance used for import.
-	memPerCore: The memory allocated per CPU core used for import.
-
-Returns:
-
-	float64: The estimated time taken for import in minutes.
-	int64: Total parallel jobs used for import.
-*/
-func calculateTimeTakenAndParallelJobsForImportColocatedObjects(dbObjects []SourceDBMetadata,
-	vCPUPerInstance int, memPerCore int, experimentDB *sql.DB) (float64, int64, error) {
-	// the total size of objects
-	var size float64 = 0
-	var timeTakenOfFetchedRow float64
-	var maxSizeOfFetchedRow float64
-	var parallelJobs int64
-	for _, dbObject := range dbObjects {
-		size += lo.Ternary(dbObject.Size.Valid, dbObject.Size.Float64, 0)
-	}
-	// find the rows in experiment data about the approx row matching the size
-	selectQuery := fmt.Sprintf(`
-		SELECT csv_size_gb, 
-			   migration_time_secs, 
-			   parallel_threads 
-		FROM %v 
-		WHERE num_cores = ? 
-			AND mem_per_core = ? 
-			AND csv_size_gb >= ? 
-		UNION ALL 
-		SELECT csv_size_gb, 
-			   migration_time_secs, 
-			   parallel_threads 
-		FROM %v 
-		WHERE csv_size_gb = (
-			SELECT MAX(csv_size_gb) 
-			FROM %v
-		) 
-		AND num_cores = ?
-		LIMIT 1;
-	`, COLOCATED_LOAD_TIME_TABLE, COLOCATED_LOAD_TIME_TABLE, COLOCATED_LOAD_TIME_TABLE)
-	row := experimentDB.QueryRow(selectQuery, vCPUPerInstance, memPerCore, size, vCPUPerInstance)
-
-	if err := row.Scan(&maxSizeOfFetchedRow, &timeTakenOfFetchedRow, &parallelJobs); err != nil {
-		if err == sql.ErrNoRows {
-			log.Errorf("No rows were returned by the query to experiment table: %v", COLOCATED_LOAD_TIME_TABLE)
-		} else {
-			return 0.0, 0, fmt.Errorf("error while fetching import time info with query [%s]: %w", selectQuery, err)
-		}
-	}
-
-	importTime := ((timeTakenOfFetchedRow * size) / maxSizeOfFetchedRow) / 60
-	return math.Ceil(importTime), parallelJobs, nil
-}
-
-/*
 calculateTimeTakenAndParallelJobsForImport estimates the time taken for import of tables.
 It queries experimental data to find import time estimates for similar object sizes and configurations. For every table
 , it tries to find out how much time it would table for importing that table. The function adjusts the
