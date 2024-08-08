@@ -24,8 +24,10 @@ Collects Oracle database statistics and schema information.
 Note: The order of the arguments is important and must be followed.
 
 Arguments:
-  oracle_connection_string    Oracle connection string in the format:
-                              'username@(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = hostname)(PORT = port))(CONNECT_DATA = (SID = SID)))'
+  oracle_connection_string    Oracle connection string in the following formats(no other format is supported as of now):
+                              1. 'username@(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = hostname)(PORT = port))(CONNECT_DATA = (SERVICE_NAME = service_name)))'
+                              2. 'username@(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = hostname)(PORT = port))(CONNECT_DATA = (SID = sid)))'
+                              3. 'username@tns_alias'
                               Ensure this string is properly quoted to avoid shell interpretation issues.
 
   schema_name                 The name of the schema for which statistics are to be collected.
@@ -97,47 +99,61 @@ parse_oracle_dsn() {
     local host service_name sid port
 
     log "INFO" "parsing the oracle connection string to generate DSN"
-    # Use a single awk command to extract the values
-    eval $(echo "$conn_str" | awk -F'[()]' '
-        {
-            for (i = 1; i <= NF; i++) {
-                if ($i ~ /HOST *=/) {
-                    split($i, a, "=");
-                    host=a[2];
-                    gsub(/^[ \t]+|[ \t]+$/, "", host);
-                } else if ($i ~ /SERVICE_NAME *=/) {
-                    split($i, a, "=");
-                    service_name=a[2];
-                    gsub(/^[ \t]+|[ \t]+$/, "", service_name);
-                } else if ($i ~ /SID *=/) {
-                    split($i, a, "=");
-                    sid=a[2];
-                    gsub(/^[ \t]+|[ \t]+$/, "", sid);
-                } else if ($i ~ /PORT *=/) {
-                    split($i, a, "=");
-                    port=a[2];
-                    gsub(/^[ \t]+|[ \t]+$/, "", port);
+    # Check if the connection string uses TNS alias format
+    if [[ $conn_str == *@* ]] && [[ $conn_str != *"(DESCRIPTION="* ]]; then
+        # Extract the TNS alias
+        tns_alias=$(echo "${conn_str#*@}" | tr -d "'")
+        ORACLE_DSN="dbi:Oracle:$tns_alias"
+    else
+        # Use a single awk command to extract the values
+        eval $(echo "$conn_str" | awk -F'[()]' '
+            {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /HOST *=/) {
+                        split($i, a, "=");
+                        host=a[2];
+                        gsub(/^[ \t]+|[ \t]+$/, "", host);
+                    } else if ($i ~ /SERVICE_NAME *=/) {
+                        split($i, a, "=");
+                        service_name=a[2];
+                        gsub(/^[ \t]+|[ \t]+$/, "", service_name);
+                    } else if ($i ~ /SID *=/) {
+                        split($i, a, "=");
+                        sid=a[2];
+                        gsub(/^[ \t]+|[ \t]+$/, "", sid);
+                    } else if ($i ~ /PORT *=/) {
+                        split($i, a, "=");
+                        port=a[2];
+                        gsub(/^[ \t]+|[ \t]+$/, "", port);
+                    }
                 }
             }
-        }
-        END {
-            if (service_name) {
-                printf "host=%s service_name=%s port=%s", host, service_name, port
-            } else {
-                printf "host=%s sid=%s port=%s", host, sid, port
-            }
-        }')
+            END {
+                if (service_name) {
+                    printf "host=%s service_name=%s port=%s", host, service_name, port
+                } else {
+                    printf "host=%s sid=%s port=%s", host, sid, port
+                }
+            }')
 
-    # Construct the ORACLE_DSN
-    local ORACLE_DSN
-    if [ -n "$service_name" ]; then
-        ORACLE_DSN="dbi:Oracle:host=$host;service_name=$service_name;port=$port"
-    else
-        ORACLE_DSN="dbi:Oracle:host=$host;sid=$sid;port=$port"
+        # Construct the ORACLE_DSN
+        local ORACLE_DSN
+        if [ -n "$service_name" ]; then
+            ORACLE_DSN="dbi:Oracle:host=$host;service_name=$service_name;port=$port"
+        else
+            ORACLE_DSN="dbi:Oracle:host=$host;sid=$sid;port=$port"
+        fi
     fi
 
     log "INFO" "Generated ORACLE_DSN: $ORACLE_DSN"
     echo "$ORACLE_DSN"
+}
+
+# Function to remove password from oracle connection string
+remove_password() {
+    local connection_string="$1"
+    local cleaned_string=$(echo "$connection_string" | sed -r 's|/[^@]*@|/*****@|')
+    echo "$cleaned_string"
 }
 
 # the error returned by the command in `eval $command 2>&1 | tee -a "$LOG_FILE"` was getting ignored
@@ -148,7 +164,9 @@ run_command() {
     # print and log the stderr/stdout of the command
     eval $command 2>&1 | tee -a "$LOG_FILE"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        print_and_log "ERROR" "command failed: $command"
+        print_and_log "ERROR" "command failed: $(remove_password "$command")"
+        # print the error from csv file to console and in LOG_FILE
+        printf "\n$(basename $file_to_print)\n" | tee -a "$LOG_FILE"
         cat "$file_to_print" | tee -a "$LOG_FILE"
         exit 1
     fi
@@ -186,7 +204,7 @@ main() {
         csv_file_path="$assessment_metadata_dir/${script_name%.sqlplus}.csv"
         print_and_log "INFO" "Collecting $script_action..."
         sqlplus_command="sqlplus -S $oracle_connection_string @$script $schema_name"
-        log "INFO" "executing sqlplus_command: $sqlplus_command"
+        log "INFO" "executing sqlplus_command: $(remove_password "$sqlplus_command")"
         run_command "$sqlplus_command" "$csv_file_path"
 
         # Post-processing step to remove the first line if it's empty in the generated CSV file
@@ -238,7 +256,7 @@ main() {
         $TEMPLATE_FILE_PATH > $OUTPUT_FILE_PATH
 
     # Types to be exported
-    types=("TYPE" "SEQUENCE" "TABLE" "PACKAGE" "TRIGGER" "FUNCTION" "PROCEDURE" "SYNONYM" "VIEW" "MVIEW")
+    types=("TYPE" "SEQUENCE" "TABLE" "PARTITION" "PACKAGE" "VIEW" "TRIGGER" "FUNCTION" "PROCEDURE" "MVIEW" "SYNONYM")
     for type in "${types[@]}"; do
         ltype=$(echo $type | tr '[:upper:]' '[:lower:]')
         output_dir="$assessment_metadata_dir/schema/${ltype}s"

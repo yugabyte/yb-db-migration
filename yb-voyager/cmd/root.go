@@ -21,6 +21,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,7 @@ var (
 	controlPlane                       cp.ControlPlane
 	currentCommand                     string
 	callHomeErrorOrCompletePayloadSent bool
+	cliArgsString                      string
 )
 
 var rootCmd = &cobra.Command{
@@ -75,6 +77,7 @@ Refer to docs (https://docs.yugabyte.com/preview/migrate/) for more details like
 		startTime = time.Now()
 
 		if callhome.SendDiagnostics {
+			createCLIArgsString(cmd)
 			go sendCallhomePayloadAtIntervals()
 		}
 
@@ -104,6 +107,16 @@ Refer to docs (https://docs.yugabyte.com/preview/migrate/) for more details like
 		}
 		atexit.Exit(0)
 	},
+}
+
+func createCLIArgsString(cmd *cobra.Command) {
+	var flagStrings []string
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Changed && !slices.Contains(callhome.DoNotStoreFlags, flag.Name) {
+			flagStrings = append(flagStrings, fmt.Sprintf("--%s=%s", flag.Name, flag.Value))
+		}
+	})
+	cliArgsString = strings.Join(flagStrings, " ")
 }
 
 func startPprofServer() {

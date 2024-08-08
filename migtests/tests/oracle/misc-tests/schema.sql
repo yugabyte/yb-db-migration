@@ -1,5 +1,5 @@
 /*
-This file contains tests for the trunc function(ORAFCE), reserved words and Mixed Case Tables/Columns.
+This file contains tests for the trunc function(ORAFCE), synonyms, reserved words and Mixed Case Tables/Columns.
 */
 
 CREATE TABLE TRUNC_TEST (
@@ -95,8 +95,6 @@ INSERT into "check" values(2, 'abc');
 INSERT into "check" values(3, 'abc');
 INSERT into "check" values(4, 'abc');
 INSERT into "check" values(5, 'abc');
-
-drop table if exists session_log;
 
 create table session_log 
 ( 
@@ -218,23 +216,23 @@ This test ensures that Orafce search_path is set properly during import.
 TODO: Add other Orafce functions to extend tests
 */
 
-CREATE TABLE employees
+CREATE TABLE employees_misc
     ( employee_id    NUMBER(6)
     , first_name     VARCHAR2(20)
     , last_name      VARCHAR2(25)
-	 CONSTRAINT     emp_last_name_nn  NOT NULL
+	 CONSTRAINT     emp_last_name_nn_misc  NOT NULL
     , email          VARCHAR2(25)
-	CONSTRAINT     emp_email_nn  NOT NULL
+	CONSTRAINT     emp_email_nn_misc  NOT NULL
     , phone_number   VARCHAR2(20)
     , hire_date      TIMESTAMP
-	CONSTRAINT     emp_hire_date_nn  NOT NULL
+	CONSTRAINT     emp_hire_date_nn_misc  NOT NULL
     ) ;
 
-INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date) 
+INSERT INTO employees_misc (employee_id, first_name, last_name, email, phone_number, hire_date) 
 VALUES (1, 'John', 'Doe', 'john.doe@email.com', '123-456-7890', TO_TIMESTAMP('2020-01-15 00:00:00', 'YYYY-MM-DD HH24:MI:SS'));
-INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date)
+INSERT INTO employees_misc (employee_id, first_name, last_name, email, phone_number, hire_date)
 VALUES (2, 'Jane', 'Smith', 'jane.smith@email.com', '987-654-3210', TO_TIMESTAMP('2019-05-20 00:00:00', 'YYYY-MM-DD HH24:MI:SS'));
-INSERT INTO employees (employee_id, first_name, last_name, email, phone_number, hire_date)
+INSERT INTO employees_misc (employee_id, first_name, last_name, email, phone_number, hire_date)
 VALUES (3, 'Bob', 'Johnson', 'bob.johnson@email.com', '555-123-4567', TO_TIMESTAMP('2021-08-10 00:00:00', 'YYYY-MM-DD HH24:MI:SS'));
 
 CREATE VIEW employee_yos (employee_id, full_name, yos) AS
@@ -243,7 +241,7 @@ SELECT
     first_name || ' ' || last_name,
     FLOOR( months_between( CURRENT_DATE, hire_date )/ 12 )
 FROM
-    employees;
+    employees_misc;
 
 CREATE TABLE foo (
     id   NUMBER PRIMARY KEY,
@@ -290,9 +288,14 @@ INSERT INTO foo (id, value) VALUES (32, CHR(11) || CHR(13) || 'Text with ' || CH
 INSERT INTO foo (id, value) VALUES (33, 'Text with ' || CHR(11) || CHR(13));
 INSERT INTO foo (id, value) VALUES (34, 'Text with ' || CHR(13) || CHR(11) || 'Text with ' || CHR(11) || CHR(13));
 
+-- Synonyms
 
+CREATE TABLE synonym_table (
+    emp_id NUMBER PRIMARY KEY,
+    emp_name VARCHAR2(100)
+);
 
-
+CREATE SYNONYM syn FOR synonym_table;
 
 
 

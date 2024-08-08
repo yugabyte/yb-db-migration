@@ -31,6 +31,7 @@ import (
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/callhome"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/cp"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/srcdb"
+	"github.com/yugabyte/yb-voyager/yb-voyager/src/tgtdb"
 	"github.com/yugabyte/yb-voyager/yb-voyager/src/utils"
 )
 
@@ -84,8 +85,13 @@ func importSchema() error {
 	}
 	tconf.Schema = strings.ToLower(tconf.Schema)
 
-	targetDBDetails = &callhome.TargetDBDetails{
-		Host: tconf.Host,
+	if callhome.SendDiagnostics {
+		tdb = tgtdb.NewTargetDB(&tconf)
+		err := tdb.Init()
+		if err != nil {
+			utils.ErrExit("Failed to initialize the target DB: %s", err)
+		}
+		targetDBDetails = tdb.GetCallhomeTargetDBInfo()
 	}
 
 	importSchemaStartEvent := createImportSchemaStartedEvent()
@@ -103,7 +109,6 @@ func importSchema() error {
 	if err != nil {
 		return fmt.Errorf("get target db version: %s", err)
 	}
-	targetDBDetails.DBVersion = targetDBVersion
 	utils.PrintAndLog("YugabyteDB version: %s\n", targetDBVersion)
 
 	if !flagPostSnapshotImport {
@@ -158,26 +163,26 @@ func importSchema() error {
 		}
 		skipFn := isSkipStatement
 		err = importSchemaInternal(exportDir, objectList, skipFn)
-    if err != nil {
-      return err
-    }
+		if err != nil {
+			return err
+		}
 
 		// Import the skipped ALTER TABLE statements from sequence.sql and table.sql if it exists
 		skipFn = func(objType, stmt string) bool {
 			return !isSkipStatement(objType, stmt)
 		}
 		if slices.Contains(objectList, "SEQUENCE") {
-      err = importSchemaInternal(exportDir, []string{"SEQUENCE"}, skipFn)
-      if err != nil {
-        return err
-      }
-    }
-    if slices.Contains(objectList, "TABLE") {
-      err = importSchemaInternal(exportDir, []string{"TABLE"}, skipFn)
-      if err != nil {
-        return err
-      }
-    }
+			err = importSchemaInternal(exportDir, []string{"SEQUENCE"}, skipFn)
+			if err != nil {
+				return err
+			}
+		}
+		if slices.Contains(objectList, "TABLE") {
+			err = importSchemaInternal(exportDir, []string{"TABLE"}, skipFn)
+			if err != nil {
+				return err
+			}
+		}
 
 		importDeferredStatements()
 		log.Info("Schema import is complete.")
@@ -198,7 +203,7 @@ func importSchema() error {
 }
 
 func packAndSendImportSchemaPayload(status string, errMsg string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	//Basic details in the payload
@@ -230,6 +235,7 @@ func packAndSendImportSchemaPayload(status string, errMsg string) {
 		Errors:             errorsList,
 		PostSnapshotImport: bool(flagPostSnapshotImport),
 		StartClean:         bool(startClean),
+		CommandLineArgs:    cliArgsString,
 	}
 	payload.PhasePayload = callhome.MarshalledJsonString(importSchemaPayload)
 	err := callhome.SendPayload(&payload)

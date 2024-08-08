@@ -384,10 +384,10 @@
             "GH": "https://github.com/YugaByte/yugabyte-db/issues/1131"
         },
         {
-            "ObjectType": "",
-            "ObjectName": "",
+            "ObjectType": "TABLE",
+            "ObjectName": "public.range_columns_partition_test",
             "Reason": "Adding primary key to a partitioned table is not yet implemented.",
-            "SqlStatement": "ALTER TABLE xyz add PRIMARY KEY pk(id);",
+            "SqlStatement": "ALTER TABLE ONLY public.range_columns_partition_test\n    ADD CONSTRAINT range_columns_partition_test_pkey PRIMARY KEY (a, b);",
             "Suggestion": "",
             "GH": "https://github.com/yugabyte/yugabyte-db/issues/10074"
         },

@@ -93,6 +93,9 @@ jobs:
           echo "127.0.0.1	yb-tserver-n1" | sudo tee -a /etc/hosts
           echo "127.0.0.1 yb-master-n1" | sudo tee -a /etc/hosts
           psql "postgresql://yugabyte@yb-tserver-n1:5433/yugabyte" -c "SELECT version();"
+      
+      - name: "TEST: Assessment Report Test"
+        run: migtests/scripts/run-validate-assessment-report.sh pg/assessment-report-test
 
       - name: "TEST: pg-table-list-flags-test (table-list and exclude-table-list)"
         run: migtests/scripts/run-test.sh pg/table-list-flags-tests

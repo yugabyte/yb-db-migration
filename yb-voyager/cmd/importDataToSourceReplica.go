@@ -89,7 +89,7 @@ func updateFallForwardEnabledInMetaDB() {
 }
 
 func packAndSendImportDataToSrcReplicaPayload(status string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()
@@ -108,6 +108,7 @@ func packAndSendImportDataToSrcReplicaPayload(status string) {
 		ParallelJobs:     int64(tconf.Parallelism),
 		StartClean:       bool(startClean),
 		LiveWorkflowType: FALL_FORWARD,
+		CommandLineArgs:  cliArgsString,
 	}
 	importRowsMap, err := getImportedSnapshotRowsMap("source-replica")
 	if err != nil {

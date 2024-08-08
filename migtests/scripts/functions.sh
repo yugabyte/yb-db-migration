@@ -456,8 +456,8 @@ import_data_file() {
 		--target-db-host ${TARGET_DB_HOST} \
 		--target-db-port ${TARGET_DB_PORT} \
 		--target-db-user ${TARGET_DB_USER} \
-		--target-db-schema "public" \
 		--target-db-password ${TARGET_DB_PASSWORD:-''} \
+		--target-db-schema ${TARGET_DB_SCHEMA:-''} \
 		--target-db-name ${TARGET_DB_NAME} \
 		--disable-pb true \
 		--send-diagnostics=false \
@@ -554,8 +554,6 @@ verify_report() {
 		echo "No ${actual_report} found."
 		exit 1
 	fi
-
-
 }
 
 
@@ -684,8 +682,6 @@ EOF
 assess_migration() {
 	args="--export-dir ${EXPORT_DIR}
 		--source-db-type ${SOURCE_DB_TYPE}
-		--source-db-host ${SOURCE_DB_HOST}
-		--source-db-port ${SOURCE_DB_PORT}
 		--source-db-user ${SOURCE_DB_USER}
 		--source-db-password ${SOURCE_DB_PASSWORD}
 		--source-db-name ${SOURCE_DB_NAME}
@@ -697,24 +693,30 @@ assess_migration() {
 	then
 		args="${args} --source-db-schema ${SOURCE_DB_SCHEMA}"
 	fi
+
 	if [ "${SOURCE_DB_SSL_MODE}" != "" ]
 	then
 		args="${args} --source-ssl-mode ${SOURCE_DB_SSL_MODE}"
 	fi
-
 	if [ "${SOURCE_DB_SSL_CERT}" != "" ]
 	then
 		args="${args} --source-ssl-cert ${SOURCE_DB_SSL_CERT}"
 	fi
-
 	if [ "${SOURCE_DB_SSL_KEY}" != "" ]
 	then
 		args="${args} --source-ssl-key ${SOURCE_DB_SSL_KEY}"
 	fi
-
 	if [ "${SOURCE_DB_SSL_ROOT_CERT}" != "" ]
 	then
 		args="${args} --source-ssl-root-cert ${SOURCE_DB_SSL_ROOT_CERT}"
+	fi
+
+	# flag enabling oracle ssl tests --oracle-tns-alias
+	if [ "${SOURCE_DB_ORACLE_TNS_ALIAS}" != "" ]
+	then
+		args="${args} --oracle-tns-alias ${SOURCE_DB_ORACLE_TNS_ALIAS}"
+	else
+		args="${args} --source-db-host ${SOURCE_DB_HOST} --source-db-port ${SOURCE_DB_PORT}"
 	fi
 	
 	yb-voyager assess-migration ${args} $*
@@ -796,3 +798,56 @@ move_tables() {
     jq --indent 4 --argjson new_sharded_tables "$new_sharded_tables_json" --argjson remaining_colocated_tables "$remaining_colocated_tables_json" \
        '.Sizing.SizingRecommendation.ShardedTables += $new_sharded_tables | .Sizing.SizingRecommendation.ColocatedTables = $remaining_colocated_tables' "$json_file" > tmp.json && mv tmp.json "$json_file"
 }
+
+normalize_json() {
+    local input_file="$1"
+    local output_file="$2"
+
+    jq 'walk(
+        if type == "object" then
+            if has("ObjectNames") and (."ObjectNames" | type == "string") then
+                .ObjectNames |= (split(", ") | sort | join(", "))
+            elif has("DbVersion") then
+                .DbVersion = "IGNORED"
+            elif has("OptimalSelectConnectionsPerNode") then
+                .OptimalSelectConnectionsPerNode = "IGNORED"
+            elif has("OptimalInsertConnectionsPerNode") then
+                .OptimalInsertConnectionsPerNode = "IGNORED"
+            else
+                .
+            end
+        elif type == "array" then
+            sort_by(tostring)
+        else
+            .
+        end
+    )' "$input_file" > "$output_file"
+}
+
+compare_assessment_reports() {
+    local file1="$1"
+    local file2="$2"
+
+    local temp_file1=$(mktemp)
+    local temp_file2=$(mktemp)
+
+    normalize_json "$file1" "$temp_file1"
+    normalize_json "$file2" "$temp_file2"
+
+    if cmp -s "$temp_file1" "$temp_file2"; then
+        echo "Data matches expected report."
+    else
+        echo "Data does not match expected report."
+        diff_output=$(diff "$temp_file1" "$temp_file2")
+        echo "$diff_output"
+		
+		# Clean up temporary files
+		rm "$temp_file1" "$temp_file2"
+        exit 1
+    fi
+
+    # Clean up temporary files
+    rm "$temp_file1" "$temp_file2"
+}
+
+

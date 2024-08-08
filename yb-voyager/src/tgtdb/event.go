@@ -282,7 +282,7 @@ func (event *Event) getPreparedInsertStmt(tdb TargetDB, targetDBType string) (st
 	columns := strings.Join(columnList, ", ")
 	values := strings.Join(valueList, ", ")
 	stmt := fmt.Sprintf(insertTemplate, event.TableNameTup.ForUserQuery(), columns, values)
-	if targetDBType == POSTGRESQL {
+	if targetDBType == POSTGRESQL || targetDBType == YUGABYTEDB {
 		keyColumns := utils.GetMapKeysSorted(event.Key)
 		for i, column := range keyColumns {
 			column, err := tdb.QuoteAttributeName(event.TableNameTup, column)

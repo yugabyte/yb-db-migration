@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source ${SCRIPTS}/functions.sh
+
+echo "Creating ${SOURCE_DB_NAME} database on source"
+run_psql postgres "DROP DATABASE IF EXISTS ${SOURCE_DB_NAME};"
+run_psql postgres "CREATE DATABASE ${SOURCE_DB_NAME};"
+
+echo "Initialising source database."
+
+TEMP_SQL=$(mktemp "${TEST_DIR}/temp_sql.XXXXXX")
+
+if [ ! -f "$TEMP_SQL" ]; then
+  echo "Failed to create temporary file in ${TEST_DIR}"
+  exit 1
+fi
+
+# Writing temporary SQL script to create DB objects for the test
+cat <<EOF > "$TEMP_SQL"
+\i ${TEST_DIR}/../misc-objects-1/schema.sql;
+\i ${TEST_DIR}/../misc-objects-2/pg_misc_objects2.sql;
+\i ${TEST_DIR}/../views-and-rules/pg_views_and_rules_automation.sql;
+\i pg_assessment_report.sql;
+CREATE SCHEMA IF NOT EXISTS schema2;
+SET SEARCH_PATH TO schema2;
+\i ${TEST_DIR}/../misc-objects-1/schema.sql;
+\i ${TEST_DIR}/../misc-objects-2/pg_misc_objects2.sql;
+\i pg_assessment_report.sql;
+EOF
+
+# Run the temporary SQL script
+run_psql "${SOURCE_DB_NAME}" "\i ${TEMP_SQL}"
+
+# Clean up the temporary SQL script
+rm "$TEMP_SQL"
+
+echo "End of script"

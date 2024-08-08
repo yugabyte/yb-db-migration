@@ -19,7 +19,7 @@ EXPECTED_ROW_COUNT = {
 	'case_sensitive_columns':6,
 	'c': 12,
 	'c1': 2,
-	'employees': 3,
+	'employees_misc': 3,
 	'foo': 34, 
 }
 
@@ -69,7 +69,7 @@ def migration_completed_checks(tgt):
 	
 	view_list = tgt.get_objects_of_type("VIEW", "public")
 	print("view_list:", view_list)
-	assert len(view_list) == 1
+	assert len(view_list) == 2
 
 	functions = tgt.fetch_all_function_names("public")
 	assert set(functions) == set(["trunc_date", "trunc_time_stamp", "insert_session_logs"])

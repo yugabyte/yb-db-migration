@@ -65,6 +65,7 @@
         {{end}}
 
         <h2>Database Objects</h2>
+        <p>{{.SchemaSummaryDBObjectsDesc}}</p>
         <table>
             <tr>
                 <th>Object Type</th>
@@ -135,6 +136,7 @@
         {{end}}
 
         <h2>Unsupported Data Types</h2>
+        <p>{{.UnsupportedDataTypesDesc}}</p>
         {{ if .UnsupportedDataTypes }}
             <div class="scrollable-div">
                 <table>
@@ -155,26 +157,41 @@
                 </table>
             </div>
         {{ else }}
-            <p>No unsupported data types detected in the assessed schemas.</p>
+            <p>No unsupported data types present in the assessed schemas.</p>
         {{ end }}
 
         <h2>Unsupported Features</h2>
+        <p>{{.UnsupportedFeaturesDesc}}</p>
         {{ $hasUnsupportedFeatures := false }}
         {{range .UnsupportedFeatures}}
             {{if .ObjectNames}} <!-- Check if ObjectNames is not empty -->
                 {{ $hasUnsupportedFeatures = true }}
                 <h3>{{.FeatureName}}</h3>
-                <ul>
-                    <div class="scrollable-div">
+                <div class="scrollable-div">
+                    <ul>
                         {{range .ObjectNames}}
                             <li>{{.}}</li>
                         {{end}}
-                    </div>
-                </ul>
+                    </ul>
+                </div>
             {{end}}
         {{end}}
         {{if not $hasUnsupportedFeatures}} <!-- Check if no unsupported features were found -->
-            <p>No unsupported features were detected among the ones assessed.</p>
+            <p>No unsupported features were present among the ones assessed.</p>
+        {{end}}
+
+
+        {{if .Notes}}
+            <br>
+            <hr>
+            <div>
+                <h4>Notes</h4>
+                    <ul>
+                        {{range .Notes}}
+                            <li>{{.}}</li>
+                        {{end}}
+                    </ul>
+            </div>
         {{end}}
     </div>
 </body>

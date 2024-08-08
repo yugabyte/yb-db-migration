@@ -15,6 +15,7 @@ begin
   end if;
 end;
 /
+ALTER USER TEST_SCHEMA IDENTIFIED BY password;
 EOF
 
 run_sqlplus_as_sys ${SOURCE_DB_NAME} "oracle-create-user.sql"

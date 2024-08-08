@@ -99,6 +99,7 @@ type AssessMigrationPhasePayload struct {
 	IndexSizingStats     string `json:"index_sizing_stats"`
 	SchemaSummary        string `json:"schema_summary"`
 	SourceConnectivity   bool   `json:"source_connectivity"`
+	CommandLineArgs      string `json:"command_line_args"`
 }
 
 type ObjectSizingStats struct {
@@ -110,8 +111,9 @@ type ObjectSizingStats struct {
 }
 
 type ExportSchemaPhasePayload struct {
-	StartClean             bool `json:"start_clean"`
-	AppliedRecommendations bool `json:"applied_recommendations"`
+	StartClean             bool   `json:"start_clean"`
+	AppliedRecommendations bool   `json:"applied_recommendations"`
+	CommandLineArgs        string `json:"command_line_args"`
 }
 
 type AnalyzePhasePayload struct {
@@ -129,6 +131,7 @@ type ExportDataPhasePayload struct {
 	TotalExportedEvents int64  `json:"total_exported_events,omitempty"`
 	EventsExportRate    int64  `json:"events_export_rate_3m,omitempty"`
 	LiveWorkflowType    string `json:"live_workflow_type,omitempty"`
+	CommandLineArgs     string `json:"command_line_args,omitempty"`
 }
 
 type ImportSchemaPhasePayload struct {
@@ -136,6 +139,7 @@ type ImportSchemaPhasePayload struct {
 	Errors             []string `json:"errors"`
 	PostSnapshotImport bool     `json:"post_snapshot_import"`
 	StartClean         bool     `json:"start_clean"`
+	CommandLineArgs    string   `json:"command_line_args"`
 }
 
 type ImportDataPhasePayload struct {
@@ -148,6 +152,7 @@ type ImportDataPhasePayload struct {
 	TotalImportedEvents int64  `json:"total_imported_events,omitempty"`
 	EventsImportRate    int64  `json:"events_import_rate_3m,omitempty"`
 	LiveWorkflowType    string `json:"live_workflow_type,omitempty"`
+	CommandLineArgs     string `json:"command_line_args"`
 }
 
 type ImportDataFilePhasePayload struct {
@@ -169,10 +174,14 @@ type DataFileParameters struct {
 }
 
 type EndMigrationPhasePayload struct {
-	BackupLogFiles       bool `json:"backup_log_files"`
-	BackupDataFiles      bool `json:"backup_data_files"`
-	BackupSchemaFiles    bool `json:"backup_schema_files"`
-	SaveMigrationReports bool `json:"save_migration_reports"`
+	CommandLineArgs string `json:"command_line_args"`
+}
+
+var DoNotStoreFlags = []string{
+	"source-db-password",
+	"target-db-password",
+	"source-replica-db-password",
+	"export-dir",
 }
 
 func MarshalledJsonString[T any](value T) string {

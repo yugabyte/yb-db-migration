@@ -28,9 +28,12 @@ FROM (
         dba_objects o
     LEFT JOIN
         dba_tab_subpartitions sp ON o.owner = sp.table_owner AND o.object_name = sp.table_name AND o.subobject_name = sp.subpartition_name
+    LEFT JOIN
+        dba_part_tables pt ON o.owner = pt.owner AND o.object_name = pt.table_name
     WHERE
         o.owner = '&1'
         AND o.object_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
     UNION ALL
     SELECT
         owner AS schema_name,
@@ -63,6 +66,20 @@ FROM (
         owner = '&1'
         AND virtual_column = 'YES'
         AND column_name NOT LIKE 'SYS_%'
+    UNION ALL
+    -- Detecting Reference and System Partitioned Tables
+    SELECT
+        pt.owner AS schema_name,
+        pt.table_name AS object_name,
+        CASE
+            WHEN pt.partitioning_type = 'REFERENCE' THEN 'REFERENCE PARTITION'
+            WHEN pt.partitioning_type = 'SYSTEM' THEN 'SYSTEM PARTITION'
+        END AS object_type
+    FROM
+        dba_part_tables pt
+    WHERE
+        pt.owner = '&1'
+        AND pt.partitioning_type IN ('REFERENCE', 'SYSTEM')
 );
 SPOOL OFF
 

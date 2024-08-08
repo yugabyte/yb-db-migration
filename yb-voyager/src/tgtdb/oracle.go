@@ -455,7 +455,7 @@ func (tdb *TargetOracleDB) ExecuteBatch(migrationUUID uuid.UUID, batch *EventBat
 			if err != nil {
 				return false, fmt.Errorf("get sql stmt: %w", err)
 			}
-			if event.Op == "c" && tdb.tconf.EnableUpsert {
+			if event.Op == "c" {
 				// converting to an UPSERT
 				event.Op = "u"
 				updateStmt, err := event.GetSQLStmt(tdb)

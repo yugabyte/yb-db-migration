@@ -24,8 +24,11 @@ FROM (
         dba_tab_columns t
     JOIN
         dba_tables tab ON t.owner = tab.owner AND t.table_name = tab.table_name
+    LEFT JOIN
+        dba_part_tables pt ON t.owner = pt.owner AND t.table_name = pt.table_name
     WHERE
         t.owner = '&1'
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
     GROUP BY
         t.owner, t.table_name
     UNION ALL
@@ -38,8 +41,11 @@ FROM (
         dba_tab_columns t
     JOIN
         dba_tab_partitions p ON t.owner = p.table_owner AND t.table_name = p.table_name
+    LEFT JOIN
+        dba_part_tables pt ON t.owner = pt.owner AND t.table_name = pt.table_name
     WHERE
         t.owner = '&1'
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
     GROUP BY
         t.owner, t.table_name, p.partition_name
     UNION ALL
@@ -52,8 +58,11 @@ FROM (
         dba_tab_columns t
     JOIN
         dba_tab_subpartitions sp ON t.owner = sp.table_owner AND t.table_name = sp.table_name
+    LEFT JOIN
+        dba_part_tables pt ON t.owner = pt.owner AND t.table_name = pt.table_name
     WHERE
         t.owner = '&1'
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
     GROUP BY
         t.owner, t.table_name, sp.partition_name, sp.subpartition_name
     UNION ALL
@@ -68,7 +77,7 @@ FROM (
         dba_indexes idx ON i.index_owner = idx.owner AND i.index_name = idx.index_name
     WHERE
         i.index_owner = '&1'
-        AND idx.index_type NOT IN ('CLUSTER', 'DOMAIN', 'BITMAP', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
+        AND idx.index_type NOT IN ('CLUSTER', 'DOMAIN', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
         AND i.index_name NOT IN (
             SELECT index_name
             FROM dba_constraints

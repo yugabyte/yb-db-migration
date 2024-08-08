@@ -30,9 +30,12 @@ FROM (
         dba_segments s
     LEFT JOIN
         dba_tab_subpartitions sp ON s.owner = sp.table_owner AND s.segment_name = sp.table_name AND s.partition_name = sp.subpartition_name
+    LEFT JOIN
+        dba_part_tables pt ON s.owner = pt.owner AND s.segment_name = pt.table_name
     WHERE
         s.segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
         AND s.owner = '&1'
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
     UNION ALL
     SELECT
         i.owner AS schema_name,
@@ -45,7 +48,7 @@ FROM (
         dba_segments s ON i.owner = s.owner AND i.index_name = s.segment_name
     WHERE
         i.owner = '&1'
-        AND i.index_type NOT IN ('CLUSTER', 'DOMAIN', 'BITMAP', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
+        AND i.index_type NOT IN ('CLUSTER', 'DOMAIN', 'FUNCTION-BASED DOMAIN', 'IOT - TOP', 'NORMAL/REV', 'FUNCTION-BASED NORMAL/REV')
         AND i.index_name NOT IN (
             SELECT index_name
             FROM dba_constraints

@@ -91,6 +91,12 @@ const (
 	CUTOVER_TO_TARGET         = "cutover-to-target"
 	CUTOVER_TO_SOURCE         = "cutover-to-source"
 	CUTOVER_TO_SOURCE_REPLICA = "cutover-to-source-replica"
+
+	// unsupported features of assess migration
+	VIRTUAL_COLUMN      = "VIRTUAL COLUMN"
+	INHERITED_TYPE      = "INHERITED TYPE"
+	REFERENCE_PARTITION = "REFERENCE PARTITION"
+	SYSTEM_PARTITION    = "SYSTEM PARTITION"
 )
 
 var supportedSourceDBTypes = []string{ORACLE, MYSQL, POSTGRESQL, YUGABYTEDB}

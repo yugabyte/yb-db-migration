@@ -179,9 +179,24 @@ ADD CONSTRAINT cnstr_id
  UNIQUE (id)
 DEFERRABLE;
 
---adding pk to child table
-CREATE TABLE xyz PARTITION OF abc;
-ALTER TABLE xyz add PRIMARY KEY pk(id);
+--adding pk to partitioned table
+CREATE TABLE public.range_columns_partition_test (
+    a bigint NOT NULL,
+    b bigint NOT NULL
+)
+PARTITION BY RANGE (a, b);
+
+ALTER TABLE ONLY public.range_columns_partition_test
+    ADD CONSTRAINT range_columns_partition_test_pkey PRIMARY KEY (a, b);
+
+CREATE TABLE public.range_columns_partition_test_copy (
+    a bigint NOT NULL,
+    b bigint NOT NULL,
+	PRIMARY KEY(a, b)
+)
+PARTITION BY RANGE (a, b);
+
+
 
 --foreign table issues
 CREATE FOREIGN TABLE tbl_p(

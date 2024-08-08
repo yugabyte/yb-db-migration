@@ -141,7 +141,7 @@ func exportSchema() error {
 }
 
 func packAndSendExportSchemaPayload(status string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()
@@ -157,6 +157,7 @@ func packAndSendExportSchemaPayload(status string) {
 	exportSchemaPayload := callhome.ExportSchemaPhasePayload{
 		StartClean:             bool(startClean),
 		AppliedRecommendations: assessmentRecommendationsApplied,
+		CommandLineArgs:        cliArgsString,
 	}
 
 	payload.PhasePayload = callhome.MarshalledJsonString(exportSchemaPayload)
@@ -396,8 +397,8 @@ func applyShardingRecommendationIfMatching(sqlInfo *sqlInfo, shardedTables []str
 	case ORACLE:
 		// TODO: handle case-sensitivity properly
 		for _, shardedTable := range shardedTables {
-			parts := strings.Split(shardedTable, ".")
-			if strings.ToLower(parts[1]) == parsedTableName {
+			// in case of oracle, shardedTable is unqualified.
+			if strings.ToLower(shardedTable) == parsedTableName {
 				match = true
 				break
 			}

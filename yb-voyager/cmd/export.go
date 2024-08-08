@@ -308,6 +308,7 @@ func validateOracleParams() {
 		utils.ErrExit(`Error: one flag required out of "oracle-tns-alias", "source-db-name", "oracle-db-sid" required.`)
 	} else if source.TNSAlias != "" {
 		//Priority order for Oracle: oracle-tns-alias > source-db-name > oracle-db-sid
+		// TODO: revisit voyager code wrt the priority among: sid, tnsalias, dbname
 		utils.PrintAndLog("Using TNS Alias for export.")
 		source.DBName = ""
 		source.DBSid = ""

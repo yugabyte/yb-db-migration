@@ -113,7 +113,7 @@ func initSourceConfFromTargetConf() error {
 }
 
 func packAndSendExportDataFromTargetPayload(status string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()
@@ -127,8 +127,9 @@ func packAndSendExportDataFromTargetPayload(status string) {
 
 	payload.MigrationPhase = EXPORT_DATA_FROM_TARGET_PHASE
 	exportDataPayload := callhome.ExportDataPhasePayload{
-		ParallelJobs: int64(source.NumConnections),
-		StartClean:   bool(startClean),
+		ParallelJobs:    int64(source.NumConnections),
+		StartClean:      bool(startClean),
+		CommandLineArgs: cliArgsString,
 	}
 
 	exportDataPayload.Phase = exportPhase

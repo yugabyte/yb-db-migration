@@ -166,7 +166,7 @@ func executeSqlStmtWithRetries(conn **pgx.Conn, sqlInfo sqlInfo, objType string)
 			color.Red(fmt.Sprintf("%s\n", err.Error()))
 			if tconf.ContinueOnError {
 				log.Infof("appending stmt to failedSqlStmts list: %s\n", utils.GetSqlStmtToPrint(sqlInfo.stmt))
-				errString := "/*\n" + err.Error() + "\n*/\n"
+				errString := fmt.Sprintf("/*\n%s\nFile :%s\n*/\n", err.Error(), sqlInfo.fileName)
 				finalFailedSqlStmts = append(finalFailedSqlStmts, errString+sqlInfo.formattedStmt)
 			} else {
 				return err
@@ -209,7 +209,7 @@ func importDeferredStatements() {
 				break
 			} else {
 				log.Infof("failed retry of deferred stmt: %s\n%v", utils.GetSqlStmtToPrint(deferredSqlStmts[j].stmt), err)
-				errString := fmt.Sprintf("/*\n%s\n*/\n", err.Error())
+				errString := fmt.Sprintf("/*\n%s\nFile :%s\n*/\n", err.Error(), deferredSqlStmts[j].fileName)
 				failedSqlStmtInIthIteration = append(failedSqlStmtInIthIteration, errString+deferredSqlStmts[j].formattedStmt)
 				err = conn.Close(context.Background())
 				if err != nil {

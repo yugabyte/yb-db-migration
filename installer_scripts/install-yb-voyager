@@ -8,14 +8,54 @@ set -e
 ARGS_MACOS=$*
 ARGS_LINUX=$@
 
+LOG_FILE=/tmp/install-yb-voyager.log
 VERSION="latest"
 
-# This needs to be changed to the latest debezium release tag
-VOYAGER_RELEASE_TAG=${VOYAGER_RELEASE_TAG:-"v1.7.1"}
-DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-1.7.1"}
+# Check if jq is installed
+if ! command -v jq &> /dev/null
+then
+	echo "ERROR: jq is not installed. Please install jq before running this script."
+	exit 1
+fi
 
-# the hash corresponds to the yb-voyager/v1.7.1 tag
-YB_VOYAGER_GIT_HASH="bf206d6640e85daafabcc0344cd4d599b9f024ea" 
+# Fetch the latest release data from the github api
+LATEST_RELEASE_DATA=$(curl -s https://api.github.com/repos/yugabyte/yb-voyager/releases/latest)
+# Check if API call was successful
+if [ -z "$LATEST_RELEASE_DATA" ]
+then
+	echo "ERROR: Failed to fetch the latest release data from the github api."
+	exit 1
+fi
+
+# Extract the latest release name and tag name from the fetched data
+LATEST_RELEASE_NAME=$(echo "$LATEST_RELEASE_DATA" | jq -r '.name')
+LATEST_TAG_NAME=$(echo "$LATEST_RELEASE_DATA" | jq -r '.tag_name')
+
+# Fetch the commit hash of the latest tagged commit
+LATEST_TAG_DATA=$(curl -s https://api.github.com/repos/yugabyte/yb-voyager/git/refs/tags/${LATEST_TAG_NAME})
+# Check if API call was successful
+if [ -z "$LATEST_TAG_DATA" ]
+then
+	echo "ERROR: Failed to fetch the latest tagged commit data from the github api."
+	exit 1
+fi
+
+LATEST_TAGGED_COMMIT=$(echo "$LATEST_TAG_DATA" | jq -r '.object.sha')
+
+# The release name is like v1.7.2, we can get the voyager version by removing the v
+VOYAGER_VERSION=$(echo $LATEST_RELEASE_NAME | sed 's/v//')
+
+# Log all the fetched data in the LOG_FILE
+echo "LATEST_RELEASE_NAME=${LATEST_RELEASE_NAME}" >> $LOG_FILE
+echo "LATEST_TAG_NAME=${LATEST_TAG_NAME}" >> $LOG_FILE
+echo "LATEST_TAGGED_COMMIT=${LATEST_TAGGED_COMMIT}" >> $LOG_FILE
+echo "VOYAGER_VERSION=${VOYAGER_VERSION}" >> $LOG_FILE
+
+VOYAGER_RELEASE_NAME=${VOYAGER_RELEASE_NAME:-${LATEST_RELEASE_NAME}}
+DEBEZIUM_VERSION=${DEBEZIUM_VERSION:-"2.3.3-"${VOYAGER_VERSION}}
+
+# the hash corresponds to the latest tag's commit hash fetched using the github api
+YB_VOYAGER_GIT_HASH=${LATEST_TAGGED_COMMIT}
 
 
 ONLY_PG="false"
@@ -23,9 +63,6 @@ ONLY_PG="false"
 trap on_exit EXIT
 
 YUM="sudo yum install -y -q"
-
-
-LOG_FILE=/tmp/install-yb-voyager.log
 
 # commit hash in main branch after release 23.2
 # issues #489 #492 #247 in ora2pg were fixed after this change
@@ -52,7 +89,6 @@ RC_FILE="$HOME/.yb-voyager.rc"
 touch $RC_FILE
 # just in case last execution of script stopped in between
 source $RC_FILE
-
 
 on_exit() {
 	rc=$?
@@ -277,7 +313,7 @@ install_debezium_server_latest_release() {
 	output "Installing debezium:${DEBEZIUM_VERSION}"
 	debezium_server_filename="debezium-server.tar.gz"
 	# download
-	wget -nv "https://github.com/yugabyte/yb-voyager/releases/download/yb-voyager/${VOYAGER_RELEASE_TAG}/${debezium_server_filename}"
+	wget -nv "https://github.com/yugabyte/yb-voyager/releases/download/yb-voyager/${VOYAGER_RELEASE_NAME}/${debezium_server_filename}"
 	# delete contents of /opt/yb-voyager/debezium-server if exists. 
 	# This is done to ensure that older version jars are not left behind in the lib dir.
 	if [ -d /opt/yb-voyager/debezium-server ]
@@ -579,7 +615,6 @@ install_yb_voyager() {
 	popd > /dev/null
 	sudo mv -f $HOME/go/bin/yb-voyager /usr/local/bin
 }
-
 
 # Output a line to both STDOUT and STDERR. Use this function to output something to
 # user as well as in the log file.

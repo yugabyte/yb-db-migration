@@ -39,7 +39,7 @@ type MigrationStatusRecord struct {
 	EndMigrationRequested                           bool              `json:"EndMigrationRequested"`
 	PGReplicationSlotName                           string            `json:"PGReplicationSlotName"` // of the format voyager_<migrationUUID> (with replace "-" -> "_")
 	PGPublicationName                               string            `json:"PGPublicationName"`     // of the format voyager_<migrationUUID> (with replace "-" -> "_")
-	SnapshotMechanism                               string            `json:"SnapshotMechanism"`     // one of (debezium, pg_dump)
+	SnapshotMechanism                               string            `json:"SnapshotMechanism"`     // one of (debezium, pg_dump, ora2pg)
 	SourceRenameTablesMap                           map[string]string `json:"SourceRenameTablesMap"` // map of source table.Qualified.Unquoted -> table.Qualified.Unquoted for renaming the leaf partitions to root table in case of PG migration
 	TargetRenameTablesMap                           map[string]string `json:"TargetRenameTablesMap"` // map of target table.Qualified.Unquoted -> table.Qualified.Unquoted for renaming the leaf partitions to root table in case of PG migration
 	IsExportTableListSet                            bool              `json:"IsExportTableListSet"`
@@ -76,4 +76,8 @@ func (m *MetaDB) InitMigrationStatusRecord() error {
 		record.MigrationUUID = uuid.New().String()
 		record.ExportType = utils.SNAPSHOT_ONLY
 	})
+}
+
+func (msr *MigrationStatusRecord) IsSnapshotExportedViaDebezium() bool {
+	return msr.SnapshotMechanism == "debezium"
 }

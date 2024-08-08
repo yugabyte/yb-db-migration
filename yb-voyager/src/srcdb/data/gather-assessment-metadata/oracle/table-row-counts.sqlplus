@@ -11,25 +11,32 @@ SET VERIFY OFF
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 WHENEVER OSERROR EXIT FAILURE
 
--- Select the data into the CSV file using inline views
 SPOOL table-row-counts.csv
-
-SELECT
-    s.owner AS schema_name,
-    CASE
-        WHEN s.segment_type = 'TABLE' THEN s.segment_name
-        WHEN s.segment_type = 'TABLE PARTITION' THEN s.segment_name || '_' || s.partition_name
-        WHEN s.segment_type = 'TABLE SUBPARTITION' THEN s.segment_name || '_' || sp.partition_name || '_' || s.partition_name
+SELECT  
+    t.owner AS schema_name, 
+    CASE 
+        WHEN sp.subpartition_name IS NOT NULL THEN 
+            sp.table_name || '_' || sp.partition_name || '_' || sp.subpartition_name 
+        WHEN tp.partition_name IS NOT NULL THEN 
+            tp.table_name || '_' || tp.partition_name
+        ELSE 
+            t.table_name 
     END AS table_name,
-    0 as row_count
+    0 AS row_count
 FROM
-    dba_segments s
+    dba_tables t
+LEFT JOIN 
+    dba_tab_partitions tp ON t.owner = tp.table_owner AND t.table_name = tp.table_name
 LEFT JOIN
-    dba_tab_subpartitions sp ON s.owner = sp.table_owner AND s.segment_name = sp.table_name AND s.partition_name = sp.subpartition_name
-WHERE
-    s.segment_type IN ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION')
-    AND s.owner = '&1';
-
+    dba_tab_subpartitions sp ON tp.table_owner = sp.table_owner AND tp.partition_name = sp.partition_name AND t.table_name = sp.table_name
+LEFT JOIN
+        dba_part_tables pt ON t.owner = pt.owner AND t.table_name = pt.table_name
+WHERE 
+    t.owner = '&1' 
+    AND t.table_name NOT LIKE 'DR$%'
+    AND t.nested = 'NO' -- Exclude nested tables
+    AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
+ORDER BY 
+    t.owner, table_name;
 SPOOL OFF
-
 EXIT;

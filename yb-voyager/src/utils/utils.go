@@ -160,6 +160,23 @@ func IsDirectoryEmpty(pathPattern string) bool {
 	return len(files) == 0
 }
 
+func IsFileEmpty(fpath string) bool {
+	file, err := os.Open(fpath)
+	if err != nil {
+		log.Errorf("IsFileEmpty: file open: %v", err)
+		return false
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		log.Errorf("IsFileEmpty: file %s stat: %v", fpath, err)
+		return false
+	}
+
+	return fileInfo.Size() == 0
+}
+
 func FileOrFolderExists(path string) bool {
 	_, err := os.Stat(path)
 	if err != nil {

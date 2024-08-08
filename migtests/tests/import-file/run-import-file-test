@@ -39,24 +39,31 @@ main() {
 	step "Create target table."
 	ysql_import_file ${TARGET_DB_NAME} schema.sql
 
+	export TARGET_DB_SCHEMA='non_public'
+
+	step "Import data file: SMSA.txt -> smsa in a non-public schema"
+	import_data_file --data-dir ${TEST_DIR} --format text --delimiter '\t' \
+			--file-table-map "SMSA.txt:smsa"  --start-clean true
+	
+	#clean up the export dir as we will have public schema from this test which should be on fresh export-dir 
+	rm -rf ${EXPORT_DIR}
+	mkdir -p ${EXPORT_DIR}
+	export TARGET_DB_SCHEMA='public'
+
 	step "Import data file: OneMRows.text -> one_m_rows"
 	import_data_file --data-dir ${TEST_DIR} --format text --delimiter '|' \
-		--file-table-map "OneMRows.text:one_m_rows"
+		--file-table-map "OneMRows.text:one_m_rows" --start-clean true 
 
 	export CSV_READER_MAX_BUFFER_SIZE_BYTES=300
 	step "Import data file: FY2021_Survey.csv -> survey"
 	import_data_file --data-dir ${TEST_DIR} --format csv --delimiter ',' \
-		--file-table-map "FY2021_Survey.csv:survey" --has-header=true --start-clean true
-
-	step "Import data file: SMSA.txt -> smsa"
-	import_data_file --data-dir ${TEST_DIR} --format text --delimiter '\t' \
-			--file-table-map "SMSA.txt:smsa"
+		--file-table-map "FY2021_Survey.csv:survey" --has-header=true 
 
 	# Test for multiple table files import
 	step "Import data file: FY2021_Survey.csv -> survey2 and FY2021_Survey.csv -> survey3"
 	import_data_file --data-dir ${TEST_DIR} --format csv --delimiter ',' \
 		--file-table-map "FY2021_Survey.csv:survey2,FY2021_Survey.csv:survey3" \
-		--has-header=true --batch-size 1000
+		--has-header=true --batch-size 1000 
 
 	# Test for --has-header with --batch-size for a table having bigint and varchar columns
 	step "Import data file: accounts_data.csv -> accounts"

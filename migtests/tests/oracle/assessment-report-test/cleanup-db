@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source ${SCRIPTS}/functions.sh
+
+echo "Deleting existing data in source database"
+run_sqlplus_as_schema_owner ${SOURCE_DB_NAME} ${TESTS_DIR}/oracle/utils/delete_full_schema

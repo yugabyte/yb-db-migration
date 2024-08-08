@@ -24,10 +24,13 @@ FROM (
         dba_tab_columns t
     JOIN
         dba_tables tab ON t.owner = tab.owner AND t.table_name = tab.table_name
+    LEFT JOIN
+        dba_part_tables pt ON t.owner = pt.owner AND t.table_name = pt.table_name
     WHERE
         t.owner = '&1'
         AND t.table_name NOT LIKE 'DR$%'
         AND t.table_name NOT LIKE 'AQ$%'
+        AND COALESCE(pt.partitioning_type,'EMPTY') NOT IN ('SYSTEM', 'REFERENCE')
 );
 SPOOL OFF
 

@@ -322,7 +322,7 @@ func addRowInTheTable(uitbl *uitable.Table, row rowData, nameTup sqlname.NameTup
 
 func updateExportedSnapshotRowsInTheRow(msr *metadb.MigrationStatusRecord, row *rowData, nameTup sqlname.NameTuple, dbzmSnapshotRowCount *utils.StructMap[sqlname.NameTuple, int64], exportedSnapshotPGRowsMap *utils.StructMap[sqlname.NameTuple, int64]) error {
 	// TODO: read only from one place(data file descriptor). Right now, data file descriptor does not store schema names.
-	if msr.SnapshotMechanism == "debezium" {
+	if msr.IsSnapshotExportedViaDebezium() {
 		row.ExportedSnapshotRows, _ = dbzmSnapshotRowCount.Get(nameTup)
 	} else {
 		row.ExportedSnapshotRows, _ = exportedSnapshotPGRowsMap.Get(nameTup)
@@ -367,7 +367,7 @@ func updateImportedEventsCountsInTheRow(row *rowData, tableNameTup sqlname.NameT
 	if importerRole == SOURCE_REPLICA_DB_IMPORTER_ROLE {
 		var err error
 		tblName := tableNameTup.ForKey()
-		//In case of source-replica role namereg is the map of target->source-replica name 
+		//In case of source-replica role namereg is the map of target->source-replica name
 		//and hence ForKey() returns source-relica name so we need to get that from reg
 		tableNameTup, err = nameRegistryForSourceReplicaRole.LookupTableName(tblName)
 		if err != nil {

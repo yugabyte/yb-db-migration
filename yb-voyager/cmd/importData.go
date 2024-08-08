@@ -107,6 +107,8 @@ var importDataToTargetCmd = &cobra.Command{
 }
 
 func importDataCommandFn(cmd *cobra.Command, args []string) {
+
+	importPhase = dbzm.MODE_SNAPSHOT
 	ExitIfAlreadyCutover(importerRole)
 	reportProgressInBytes = false
 	tconf.ImportMode = true
@@ -129,6 +131,10 @@ func importDataCommandFn(cmd *cobra.Command, args []string) {
 	err = InitNameRegistry(exportDir, importerRole, nil, nil, &tconf, tdb, bool(startClean))
 	if err != nil {
 		utils.ErrExit("initialize name registry: %v", err)
+	}
+
+	if (importerRole == TARGET_DB_IMPORTER_ROLE || importerRole == IMPORT_FILE_ROLE) && (tconf.EnableUpsert) {
+		utils.PrintAndLog(color.RedString("WARNING: Ensure that tables on target YugabyteDB do not have secondary indexes. If a table has secondary indexes, setting --enable-upsert to true may lead to corruption of the indexes."))
 	}
 
 	dataStore = datastore.NewDataStore(filepath.Join(exportDir, "data"))
@@ -159,8 +165,6 @@ func importDataCommandFn(cmd *cobra.Command, args []string) {
 	} else {
 		importFileTasks = applyTableListFilter(importFileTasks)
 	}
-
-	importPhase = dbzm.MODE_SNAPSHOT
 
 	importData(importFileTasks)
 	tdb.Finalize()
@@ -403,7 +407,7 @@ func importData(importFileTasks []*ImportFileTask) {
 		utils.ErrExit("Failed to get migration status record: %s", err)
 	}
 
-	if msr.SnapshotMechanism == "debezium" {
+	if msr.IsSnapshotExportedViaDebezium() {
 		valueConverter, err = dbzm.NewValueConverter(exportDir, tdb, tconf, importerRole, msr.SourceDBConf.DBType)
 	} else {
 		valueConverter, err = dbzm.NewNoOpValueConverter()
@@ -518,49 +522,50 @@ func importData(importFileTasks []*ImportFileTask) {
 		utils.PrintAndLog("snapshot data import complete\n\n")
 	}
 
-	if !dbzm.IsDebeziumForDataExport(exportDir) {
-		errImport := executePostSnapshotImportSqls()
-		if errImport != nil {
-			utils.ErrExit("Error in importing post-snapshot-import sql: %v", err)
+	if changeStreamingIsEnabled(importType) {
+		if importerRole != SOURCE_DB_IMPORTER_ROLE {
+			displayImportedRowCountSnapshot(state, importFileTasks)
 		}
-		displayImportedRowCountSnapshot(state, importFileTasks)
+		importPhase = dbzm.MODE_STREAMING
+		color.Blue("streaming changes to %s...", tconf.TargetDBType)
+
+		if err != nil {
+			utils.ErrExit("failed to get table unique key columns map: %s", err)
+		}
+		valueConverter, err = dbzm.NewValueConverter(exportDir, tdb, tconf, importerRole, source.DBType)
+		if err != nil {
+			utils.ErrExit("Failed to create value converter: %s", err)
+		}
+		err = streamChanges(state, importTableList)
+		if err != nil {
+			utils.ErrExit("Failed to stream changes to %s: %s", tconf.TargetDBType, err)
+		}
+
+		status, err := dbzm.ReadExportStatus(filepath.Join(exportDir, "data", "export_status.json"))
+		if err != nil {
+			utils.ErrExit("failed to read export status for restore sequences: %s", err)
+		}
+		// in case of live migration sequences are restored after cutover
+		err = tdb.RestoreSequences(status.Sequences)
+		if err != nil {
+			utils.ErrExit("failed to restore sequences: %s", err)
+		}
+
+		utils.PrintAndLog("Completed streaming all relevant changes to %s", tconf.TargetDBType)
+		err = markCutoverProcessed(importerRole)
+		if err != nil {
+			utils.ErrExit("failed to mark cutover as processed: %s", err)
+		}
+		utils.PrintAndLog("\nRun the following command to get the current report of the migration:\n" +
+			color.CyanString("yb-voyager get data-migration-report --export-dir %q", exportDir))
 	} else {
-		if changeStreamingIsEnabled(importType) {
-			if importerRole != SOURCE_DB_IMPORTER_ROLE {
-				displayImportedRowCountSnapshot(state, importFileTasks)
+		// offline migration; either using dbzm or pg_dump/ora2pg
+		if !msr.IsSnapshotExportedViaDebezium() {
+			errImport := executePostSnapshotImportSqls()
+			if errImport != nil {
+				utils.ErrExit("Error in importing post-snapshot-import sql: %v", err)
 			}
-			importPhase = dbzm.MODE_STREAMING
-			color.Blue("streaming changes to %s...", tconf.TargetDBType)
-
-			if err != nil {
-				utils.ErrExit("failed to get table unique key columns map: %s", err)
-			}
-			valueConverter, err = dbzm.NewValueConverter(exportDir, tdb, tconf, importerRole, source.DBType)
-			if err != nil {
-				utils.ErrExit("Failed to create value converter: %s", err)
-			}
-			err = streamChanges(state, importTableList)
-			if err != nil {
-				utils.ErrExit("Failed to stream changes to %s: %s", tconf.TargetDBType, err)
-			}
-
-			status, err := dbzm.ReadExportStatus(filepath.Join(exportDir, "data", "export_status.json"))
-			if err != nil {
-				utils.ErrExit("failed to read export status for restore sequences: %s", err)
-			}
-			// in case of live migration sequences are restored after cutover
-			err = tdb.RestoreSequences(status.Sequences)
-			if err != nil {
-				utils.ErrExit("failed to restore sequences: %s", err)
-			}
-
-			utils.PrintAndLog("Completed streaming all relevant changes to %s", tconf.TargetDBType)
-			err = markCutoverProcessed(importerRole)
-			if err != nil {
-				utils.ErrExit("failed to mark cutover as processed: %s", err)
-			}
-			utils.PrintAndLog("\nRun the following command to get the current report of the migration:\n" +
-				color.CyanString("yb-voyager get data-migration-report --export-dir %q", exportDir))
+			displayImportedRowCountSnapshot(state, importFileTasks)
 		} else {
 			status, err := dbzm.ReadExportStatus(filepath.Join(exportDir, "data", "export_status.json"))
 			if err != nil {
@@ -591,7 +596,7 @@ func importData(importFileTasks []*ImportFileTask) {
 
 func packAndSendImportDataPayload(status string) {
 
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	//basic payload details
@@ -605,8 +610,9 @@ func packAndSendImportDataPayload(status string) {
 	payload.TargetDBDetails = callhome.MarshalledJsonString(targetDBDetails)
 	payload.MigrationPhase = IMPORT_DATA_PHASE
 	importDataPayload := callhome.ImportDataPhasePayload{
-		ParallelJobs: int64(tconf.Parallelism),
-		StartClean:   bool(startClean),
+		ParallelJobs:    int64(tconf.Parallelism),
+		StartClean:      bool(startClean),
+		CommandLineArgs: cliArgsString,
 	}
 
 	//Getting the imported snapshot details
@@ -625,7 +631,7 @@ func packAndSendImportDataPayload(status string) {
 
 	importDataPayload.Phase = importPhase
 
-	if importPhase != dbzm.MODE_SNAPSHOT {
+	if importPhase != dbzm.MODE_SNAPSHOT && statsReporter != nil {
 		importDataPayload.EventsImportRate = statsReporter.EventsImportRateLast3Min
 		importDataPayload.TotalImportedEvents = statsReporter.TotalEventsImported
 	}

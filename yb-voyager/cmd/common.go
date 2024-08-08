@@ -924,7 +924,6 @@ func getImportedSnapshotRowsMap(dbType string) (*utils.StructMap[sqlname.NameTup
 	return snapshotRowsMap, nil
 }
 
-
 func getImportedSizeMap() (*utils.StructMap[sqlname.NameTuple, int64], error) { //used for import data file case right now
 	importerRole = IMPORT_FILE_ROLE
 	state := NewImportDataState(exportDir)
@@ -973,11 +972,15 @@ func storeTableListInMSR(tableList []sqlname.NameTuple) error {
 // =====================================================================
 
 type AssessmentReport struct {
-	SchemaSummary        utils.SchemaSummary                   `json:"SchemaSummary"`
-	Sizing               *migassessment.SizingAssessmentReport `json:"Sizing"`
-	UnsupportedDataTypes []utils.TableColumnsDataTypes         `json:"UnsupportedDataTypes"`
-	UnsupportedFeatures  []UnsupportedFeature                  `json:"UnsupportedFeatures"`
-	TableIndexStats      *[]migassessment.TableIndexStats      `json:"TableIndexStats"`
+	SchemaSummary              utils.SchemaSummary                   `json:"SchemaSummary"`
+	SchemaSummaryDBObjectsDesc string                                `json:"SchemaSummaryDBObjectsDesc"` // TODO: ideally this should be in SchemaSummary
+	Sizing                     *migassessment.SizingAssessmentReport `json:"Sizing"`
+	UnsupportedDataTypes       []utils.TableColumnsDataTypes         `json:"UnsupportedDataTypes"`
+	UnsupportedDataTypesDesc   string                                `json:"UnsupportedDataTypesDesc"`
+	UnsupportedFeatures        []UnsupportedFeature                  `json:"UnsupportedFeatures"`
+	UnsupportedFeaturesDesc    string                                `json:"UnsupportedFeaturesDesc"`
+	TableIndexStats            *[]migassessment.TableIndexStats      `json:"TableIndexStats"`
+	Notes                      []string                              `json:"Notes"`
 }
 
 // =============== for yugabyted controlplane ==============//
@@ -1046,13 +1049,25 @@ func (ar *AssessmentReport) GetClusterSizingRecommendation() string {
 
 // ==========================================================================
 
+func shouldSendCallhome() bool {
+	//here checking the startTime is initialised or not as can be seen in root.go we
+	//initialise startTime once we have logging setup after all initial checks
+	//e.g. if someone hasn't provided the correct export-dir because of which initialisation step
+	//isn't run and command fails with export-dir doesn't exists and we send payload on exits as well
+	//so in payload we were having start-time as uninitialised ("0001-01-01 00:00:00") and time taken (9223372037)
+	//was getting calculated as very big value so the callhome was not accepting the request due large value in int column
+	//psycopg2.errors.NumericValueOutOfRange: value "9223372037" is out of range for type integer
+	uninitialisedTimestamp := time.Time{}
+	return bool(callhome.SendDiagnostics) && !startTime.Equal(uninitialisedTimestamp)
+}
+
 func createCallhomePayload() callhome.Payload {
 	var payload callhome.Payload
 	payload.MigrationUUID = migrationUUID
-	payload.PhaseStartTime = startTime.UTC().Format("2006-01-02T15:04:05.999999")
+	payload.PhaseStartTime = startTime.UTC().Format("2006-01-02 15:04:05.999999")
 	payload.YBVoyagerVersion = utils.YB_VOYAGER_VERSION
 	payload.TimeTakenSec = int(math.Ceil(time.Since(startTime).Seconds()))
-	payload.CollectedAt = time.Now().UTC().Format("2006-01-02T15:04:05.999999")
+	payload.CollectedAt = time.Now().UTC().Format("2006-01-02 15:04:05.999999")
 
 	return payload
 }
@@ -1089,7 +1104,7 @@ func PackAndSendCallhomePayloadOnExit() {
 
 func updateExportSnapshotDataStatsInPayload(exportDataPayload *callhome.ExportDataPhasePayload) {
 	//Updating the payload with totalRows and LargestTableRows for both debezium/non-debezium case
-	if !useDebezium || (changeStreamingIsEnabled(exportType) && source.DBType == POSTGRESQL) { 
+	if !useDebezium || (changeStreamingIsEnabled(exportType) && source.DBType == POSTGRESQL) {
 		//non-debezium and pg live migration snapshot case reading the export_snapshot_status.json file
 		if exportSnapshotStatusFile != nil {
 			exportStatusSnapshot, err := exportSnapshotStatusFile.Read()

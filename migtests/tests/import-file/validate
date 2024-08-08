@@ -14,7 +14,6 @@ EXPECTED = {
 	"survey": 41715,
  	"survey2": 41715,
  	"survey3": 41715,
-	"smsa": 60,
 	"t1_quote_char": 3,
 	"t1_quote_escape_char1": 3,
  	"t1_quote_escape_char2": 3,
@@ -52,6 +51,9 @@ EXPECTED = {
 	"gcs_csv_with_header": 3,
 	"gcs_volume": 1000000,
 	"gcs_quote_escape_char1": 3,
+}
+EXPECTED_NON_PUBLIC = {
+	"smsa": 60,
 }
 
 T1_TABLE_DATA = set([(1,None,None,"'Hello World'"), (2,None,None,"'Hello World'"), (3,None,None,"'Hello World'")])
@@ -117,6 +119,10 @@ def file_import_done_checks(tgt):
 	fetched_row_cnts = tgt.row_count_of_all_tables()
 	print(f"Row counts after import data file: {fetched_row_cnts}")
 	assert fetched_row_cnts == EXPECTED
+
+	fetched_row_cnts_non_public = tgt.row_count_of_all_tables("non_public")
+	print(f"Row counts after import data file in non_public schema: {fetched_row_cnts_non_public}")
+	assert fetched_row_cnts_non_public == EXPECTED_NON_PUBLIC
 	
 	for table_name, data in TABLE_NAME_DATA_MAP.items():
 		fetched_data = tgt.fetch_all_table_rows(table_name)

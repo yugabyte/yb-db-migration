@@ -20,10 +20,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 )
 
 var AssessmentDbSelectQuery = fmt.Sprintf("(?i)SELECT schema_name,.* FROM %v ORDER BY .* ASC", TABLE_INDEX_STATS)
@@ -950,7 +951,7 @@ func TestGetReasoning_NoObjects(t *testing.T) {
 	recommendation := IntermediateRecommendation{VCPUsPerInstance: 4, MemoryPerCore: 16}
 	var shardedObjects []SourceDBMetadata
 	var colocatedObjects []SourceDBMetadata
-	expected := "Recommended instance type with 4 vCPU and 64 GiB memory could fit "
+	expected := "Recommended instance type with 4 vCPU and 64 GiB memory could fit  Non leaf partition tables/indexes and unsupported tables/indexes were not considered."
 
 	result := getReasoning(recommendation, shardedObjects, 0, colocatedObjects, 0)
 	if result != expected {
@@ -966,9 +967,9 @@ func TestGetReasoning_OnlyColocatedObjects(t *testing.T) {
 		{Size: sql.NullFloat64{Valid: true, Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 1000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 500}},
 		{Size: sql.NullFloat64{Valid: true, Float64: 30.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1500}},
 	}
-	expected := "Recommended instance type with 8 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
+	expected := "Recommended instance type with 8 vCPU and 64 GiB memory could fit 2 objects (2 tables and 0 " +
 		"explicit/implicit indexes) with 80.00 GB size and throughput requirement of 3000 reads/sec and " +
-		"2000 writes/sec as colocated."
+		"2000 writes/sec as colocated. Non leaf partition tables/indexes and unsupported tables/indexes were not considered."
 
 	result := getReasoning(recommendation, shardedObjects, 0, colocatedObjects, 0)
 	if result != expected {
@@ -984,9 +985,9 @@ func TestGetReasoning_OnlyShardedObjects(t *testing.T) {
 		{Size: sql.NullFloat64{Valid: true, Float64: 200.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 5000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 4000}},
 	}
 	var colocatedObjects []SourceDBMetadata
-	expected := "Recommended instance type with 16 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
+	expected := "Recommended instance type with 16 vCPU and 64 GiB memory could fit 2 objects (2 tables and 0 " +
 		"explicit/implicit indexes) with 300.00 GB size and throughput requirement of 9000 reads/sec and " +
-		"7000 writes/sec as sharded."
+		"7000 writes/sec as sharded. Non leaf partition tables/indexes and unsupported tables/indexes were not considered."
 
 	result := getReasoning(recommendation, shardedObjects, 0, colocatedObjects, 0)
 	if result != expected {
@@ -1004,11 +1005,11 @@ func TestGetReasoning_ColocatedAndShardedObjects(t *testing.T) {
 		{Size: sql.NullFloat64{Valid: true, Float64: 70.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
 		{Size: sql.NullFloat64{Valid: true, Float64: 50.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 2000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 1000}},
 	}
-	expected := "Recommended instance type with 32 vCPU and 64 GiB memory could fit 2 objects(2 tables and 0 " +
+	expected := "Recommended instance type with 32 vCPU and 64 GiB memory could fit 2 objects (2 tables and 0 " +
 		"explicit/implicit indexes) with 120.00 GB size and throughput requirement of 5000 reads/sec and " +
-		"3000 writes/sec as colocated. Rest 1 objects(1 tables and 0 explicit/implicit indexes) with 150.00 GB " +
+		"3000 writes/sec as colocated. Rest 1 objects (1 tables and 0 explicit/implicit indexes) with 150.00 GB " +
 		"size and throughput requirement of 7000 reads/sec and 6000 writes/sec need to be migrated as range " +
-		"partitioned tables"
+		"partitioned tables. Non leaf partition tables/indexes and unsupported tables/indexes were not considered."
 
 	result := getReasoning(recommendation, shardedObjects, 0, colocatedObjects, 0)
 	if result != expected {
@@ -1025,11 +1026,11 @@ func TestGetReasoning_Indexes(t *testing.T) {
 	colocatedObjects := []SourceDBMetadata{
 		{Size: sql.NullFloat64{Valid: true, Float64: 100.0}, ReadsPerSec: sql.NullInt64{Valid: true, Int64: 3000}, WritesPerSec: sql.NullInt64{Valid: true, Int64: 2000}},
 	}
-	expected := "Recommended instance type with 4 vCPU and 64 GiB memory could fit 1 objects(0 tables and " +
+	expected := "Recommended instance type with 4 vCPU and 64 GiB memory could fit 1 objects (0 tables and " +
 		"1 explicit/implicit indexes) with 100.00 GB size and throughput requirement of 3000 reads/sec and " +
-		"2000 writes/sec as colocated. Rest 1 objects(0 tables and 1 explicit/implicit indexes) with 200.00 GB size " +
+		"2000 writes/sec as colocated. Rest 1 objects (0 tables and 1 explicit/implicit indexes) with 200.00 GB size " +
 		"and throughput requirement of 6000 reads/sec and 4000 writes/sec need to be migrated as range " +
-		"partitioned tables"
+		"partitioned tables. Non leaf partition tables/indexes and unsupported tables/indexes were not considered."
 
 	result := getReasoning(recommendation, shardedObjects, 1, colocatedObjects, 1)
 	if result != expected {

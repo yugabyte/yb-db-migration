@@ -326,7 +326,7 @@ func checkAndParseEscapeAndQuoteChar() {
 }
 
 func packAndSendImportDataFilePayload(status string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()

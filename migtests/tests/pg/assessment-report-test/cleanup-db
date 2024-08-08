@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source ${SCRIPTS}/functions.sh
+
+
+echo "Deleting ${SOURCE_DB_NAME} database on source"
+run_psql postgres "DROP DATABASE ${SOURCE_DB_NAME};"

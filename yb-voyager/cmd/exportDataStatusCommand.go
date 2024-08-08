@@ -57,7 +57,11 @@ var exportDataStatusCmd = &cobra.Command{
 		if err != nil {
 			utils.ErrExit("initializing name registry: %v", err)
 		}
-		useDebezium = dbzm.IsDebeziumForDataExport(exportDir)
+		msr, err := metaDB.GetMigrationStatusRecord()
+		if err != nil {
+			utils.ErrExit("Failed to get migration status record: %s", err)
+		}
+		useDebezium = msr.IsSnapshotExportedViaDebezium()
 		var rows []*exportTableMigStatusOutputRow
 		if useDebezium {
 			rows, err = runExportDataStatusCmdDbzm(streamChanges)

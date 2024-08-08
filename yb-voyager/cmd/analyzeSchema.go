@@ -52,6 +52,7 @@ type sqlInfo struct {
 	stmt string
 	// Formatted SQL statement with new-lines and tabs
 	formattedStmt string
+	fileName      string
 }
 
 var (
@@ -121,7 +122,7 @@ var (
 	analyzeSchemaReportFormat string
 	sourceObjList             []string
 	schemaAnalysisReport      utils.SchemaReport
-	tblParts                  = make(map[string]string)
+	tblPartitions             = make(map[string]bool)
 	// key is partitioned table, value is filename where the ADD PRIMARY KEY statement resides
 	primaryCons      = make(map[string]string)
 	summaryMap       = make(map[string]*summaryInfo)
@@ -191,10 +192,9 @@ var (
 	alterTblSpcRegex                = re("ALTER", "TABLESPACE", capture(ident), "SET")
 
 	// table partition. partitioned table is the key in tblParts map
-	tblPartitionRegex = re("CREATE", "TABLE", ifNotExists, capture(ident), anything, "PARTITION", "OF", capture(ident))
-	addPrimaryRegex   = re("ALTER", "TABLE", opt("ONLY"), ifExists, capture(ident), anything, "ADD PRIMARY KEY")
-	primRegex         = re("CREATE", "FOREIGN", "TABLE", capture(ident)+`\(`, anything, "PRIMARY KEY")
-	foreignKeyRegex   = re("CREATE", "FOREIGN", "TABLE", capture(ident)+`\(`, anything, "REFERENCES", anything)
+	addPrimaryRegex = re("ALTER", "TABLE", opt("ONLY"), ifExists, capture(ident), "ADD CONSTRAINT", capture(ident), "PRIMARY KEY")
+	primRegex       = re("CREATE", "FOREIGN", "TABLE", capture(ident)+`\(`, anything, "PRIMARY KEY")
+	foreignKeyRegex = re("CREATE", "FOREIGN", "TABLE", capture(ident)+`\(`, anything, "REFERENCES", anything)
 
 	// unsupported SQLs exported by ora2pg
 	compoundTrigRegex          = re("CREATE", opt("OR REPLACE"), "TRIGGER", capture(ident), anything, "COMPOUND", anything)
@@ -214,6 +214,7 @@ const (
 	STORED_GENERATED_COLUMN_ISSUE_REASON = "Stored generated columns are not supported."
 
 	GIST_INDEX_ISSUE_REASON = "Schema contains GIST index which is not supported."
+	GIN_INDEX_DETAILS       = "There are some GIN indexes present in the schema, but GIN indexes are partially supported in YugabyteDB as mentioned in (https://github.com/yugabyte/yugabyte-db/issues/7850) so take a look and modify them if not supported."
 )
 
 // Reports one case in JSON
@@ -230,9 +231,9 @@ func reportCase(filePath string, reason string, ghIssue string, suggestion strin
 	schemaAnalysisReport.Issues = append(schemaAnalysisReport.Issues, issue)
 }
 
-func reportAddingPrimaryKey(fpath string, tbl string, line string) {
+func reportAddingPrimaryKey(fpath string, objType string, tbl string, line string) {
 	reportCase(fpath, "Adding primary key to a partitioned table is not yet implemented.",
-		"https://github.com/yugabyte/yugabyte-db/issues/10074", "", "", tbl, line)
+		"https://github.com/yugabyte/yugabyte-db/issues/10074", "", objType, tbl, line)
 }
 
 func reportBasedOnComment(comment int, fpath string, issue string, suggestion string, objName string, objType string, line string) {
@@ -332,7 +333,7 @@ func checkGin(sqlInfoArr []sqlInfo, fpath string) {
 			}
 		}
 		if strings.Contains(strings.ToLower(sqlInfo.stmt), "using gin") {
-			summaryMap["INDEX"].details["There are some gin indexes present in the schema, but gin indexes are partially supported in YugabyteDB as mentioned in (https://github.com/yugabyte/yugabyte-db/issues/7850) so take a look and modify them if not supported."] = true
+			summaryMap["INDEX"].details[GIN_INDEX_DETAILS] = true
 		}
 	}
 }
@@ -469,14 +470,9 @@ func checkDDL(sqlInfoArr []sqlInfo, fpath string) {
 			summaryMap["TABLE"].invalidCount[sqlInfo.objName] = true
 			reportCase(fpath, "LIKE clause not supported yet.",
 				"https://github.com/YugaByte/yugabyte-db/issues/1129", "", "TABLE", tbl[2], sqlInfo.formattedStmt)
-		} else if tbl := tblPartitionRegex.FindStringSubmatch(sqlInfo.stmt); tbl != nil {
-			tblParts[tbl[2]] = tbl[3]
-			if filename, ok := primaryCons[tbl[2]]; ok {
-				reportAddingPrimaryKey(filename, tbl[2], sqlInfo.formattedStmt)
-			}
 		} else if tbl := addPrimaryRegex.FindStringSubmatch(sqlInfo.stmt); tbl != nil {
-			if _, ok := tblParts[tbl[3]]; ok {
-				reportAddingPrimaryKey(fpath, tbl[2], sqlInfo.formattedStmt)
+			if _, ok := tblPartitions[tbl[3]]; ok {
+				reportAddingPrimaryKey(fpath, "TABLE", tbl[3], sqlInfo.formattedStmt)
 			}
 			primaryCons[tbl[2]] = fpath
 		} else if tbl := inheritRegex.FindStringSubmatch(sqlInfo.stmt); tbl != nil {
@@ -611,6 +607,10 @@ func checkDDL(sqlInfoArr []sqlInfo, fpath string) {
 				continue
 			}
 			if len(primaryKeyColumnsList) == 0 { // if non-PK table, then no need to report
+				tblPartitions[regMatch[2]] = true
+				if filename, ok := primaryCons[regMatch[2]]; ok {
+					reportAddingPrimaryKey(filename, "TABLE", tbl[2], sqlInfo.formattedStmt)
+				}
 				continue
 			}
 			for _, partitionColumn := range partitionColumnsList {
@@ -734,6 +734,9 @@ func getCreateObjRegex(objType string) (*regexp.Regexp, int) {
 	} else if objType == "INDEX" || objType == "PARTITION_INDEX" || objType == "FTS_INDEX" {
 		createObjRegex = re("CREATE", opt("UNIQUE"), "INDEX", ifNotExists, capture(ident))
 		objNameIndex = 3
+	} else if objType == "TABLE" || objType == "PARTITION" {
+		createObjRegex = re("CREATE", opt("OR REPLACE"), "TABLE", ifNotExists, capture(ident))
+		objNameIndex = 3
 	} else { //TODO: check syntaxes for other objects and add more cases if required
 		createObjRegex = re("CREATE", opt("OR REPLACE"), objType, ifNotExists, capture(ident))
 		objNameIndex = 3
@@ -751,9 +754,29 @@ func processCollectedSql(fpath string, stmt string, formattedStmt string, objTyp
 	if createObjStmt != nil {
 		objName = createObjStmt[objNameIndex]
 
-		if summaryMap != nil && summaryMap[objType] != nil { //when just createSqlStrArray() is called from someother file, then no summaryMap exists
-			summaryMap[objType].totalCount += 1
-			summaryMap[objType].objSet[objName] = true
+		if objType == "PARTITION" || objType == "TABLE" {
+			if summaryMap != nil && summaryMap["TABLE"] != nil {
+				summaryMap["TABLE"].totalCount += 1
+				summaryMap["TABLE"].objSet[objName] = true
+			}
+		} else {
+			if summaryMap != nil && summaryMap[objType] != nil { //when just createSqlStrArray() is called from someother file, then no summaryMap exists
+				summaryMap[objType].totalCount += 1
+				summaryMap[objType].objSet[objName] = true
+			}
+		}
+	} else {
+		if objType == "TYPE" {
+			//in case of oracle there are some inherited types which can be exported as inherited tables but will be dumped in type.sql
+			createObjRegex, objNameIndex = getCreateObjRegex("TABLE")
+			createObjStmt = createObjRegex.FindStringSubmatch(formattedStmt)
+			if createObjStmt != nil {
+				objName = createObjStmt[objNameIndex]
+				if summaryMap != nil && summaryMap["TABLE"] != nil {
+					summaryMap["TABLE"].totalCount += 1
+					summaryMap["TABLE"].objSet[objName] = true
+				}
+			}
 		}
 	}
 
@@ -768,6 +791,7 @@ func processCollectedSql(fpath string, stmt string, formattedStmt string, objTyp
 		objName:       objName,
 		stmt:          stmt,
 		formattedStmt: formattedStmt,
+		fileName:      fpath,
 	}
 	return sqlInfo
 }
@@ -1076,10 +1100,11 @@ func analyzeSchema() {
 }
 
 func packAndSendAnalyzeSchemaPayload(status string) {
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()
+
 	payload.MigrationPhase = ANALYZE_PHASE
 	var callhomeIssues []utils.Issue
 	for _, issue := range schemaAnalysisReport.Issues {

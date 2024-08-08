@@ -19,16 +19,16 @@
             },
             {
                 "ObjectType": "TABLE",
-                "TotalCount": 25,
+                "TotalCount": 27,
                 "InvalidCount": 22,
-                "ObjectNames": "sales, test_2, test_7, test_8, table_abc, table_1, test_interval, sales_data, test_6, order_details, public.employees4, table_test, xyz, anydata_test, anytype_test, salaries2, test_3, uritype_test, test_1, test_non_pk_multi_column_list, test_4, test_5, test_9, table_xyz, anydataset_test"
+                "ObjectNames": "test_table_in_type_file, sales, test_2, test_7, test_8, table_abc, table_1, test_interval, sales_data, test_6, order_details, public.employees4, table_test, anydata_test, anytype_test, salaries2, test_3, uritype_test, test_1, test_non_pk_multi_column_list, test_4, test_5, test_9, table_xyz, anydataset_test, public.range_columns_partition_test, public.range_columns_partition_test_copy"
             },
             {
                 "ObjectType": "INDEX",
                 "TotalCount": 5,
                 "InvalidCount": 4,
                 "ObjectNames": "film_fulltext_idx, idx_actor_last_name, idx_name1, idx_name2, idx_name3",
-                "Details": "There are some gin indexes present in the schema, but gin indexes are partially supported in YugabyteDB as mentioned in (https://github.com/yugabyte/yugabyte-db/issues/7850) so take a look and modify them if not supported."
+                "Details": "There are some GIN indexes present in the schema, but GIN indexes are partially supported in YugabyteDB as mentioned in (https://github.com/yugabyte/yugabyte-db/issues/7850) so take a look and modify them if not supported."
             },
             {
                 "ObjectType": "PROCEDURE",

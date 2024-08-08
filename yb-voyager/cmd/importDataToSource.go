@@ -88,10 +88,11 @@ func initTargetConfFromSourceConf() error {
 
 func packAndSendImportDataToSourcePayload(status string) {
 
-	if !callhome.SendDiagnostics {
+	if !shouldSendCallhome() {
 		return
 	}
 	payload := createCallhomePayload()
+
 	payload.MigrationType = LIVE_MIGRATION
 
 	sourceDBDetails := callhome.SourceDBDetails{
@@ -103,9 +104,10 @@ func packAndSendImportDataToSourcePayload(status string) {
 
 	payload.MigrationPhase = IMPORT_DATA_SOURCE_PHASE
 	importDataPayload := callhome.ImportDataPhasePayload{
-		ParallelJobs: int64(tconf.Parallelism),
-		StartClean:   bool(startClean),
+		ParallelJobs:     int64(tconf.Parallelism),
+		StartClean:       bool(startClean),
 		LiveWorkflowType: FALL_BACK,
+		CommandLineArgs:  cliArgsString,
 	}
 
 	importDataPayload.Phase = importPhase

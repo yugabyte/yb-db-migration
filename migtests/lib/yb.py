@@ -67,20 +67,22 @@ def verify_colocation(tgt, source_db_type):
 
 	for table in sharded_tables:
 		print(f"verifying for sharded table: {table}")
-		schema_name, table_name = table.split(".")
 		if source_db_type == "oracle":
 			schema_name = os.environ.get("TARGET_DB_SCHEMA", "public")
-			table_name = convert_table_to_lowercase_if_needed(table_name)
+			table_name = convert_table_to_lowercase_if_needed(table)
+		else:
+			schema_name, table_name = table.split(".")
 		print(f"schema_name: {schema_name}, table_name: {table_name}")
 		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
 		assert not actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: False, Actual: {actual_colocation}"
 
 	for table in colocated_tables:
 		print(f"verifying for colocated table: {table}")
-		schema_name, table_name = table.split(".")
 		if source_db_type == "oracle":
 			schema_name = os.environ.get("TARGET_DB_SCHEMA", "public")
-			table_name = convert_table_to_lowercase_if_needed(table_name)
+			table_name = convert_table_to_lowercase_if_needed(table)
+		else:
+			schema_name, table_name = table.split(".")
 		print(f"schema_name: {schema_name}, table_name: {table_name}")
 		actual_colocation = tgt.check_table_colocation(table_name, schema_name)
 		assert actual_colocation, f"Table '{table_name}' colocation mismatch. Expected: True, Actual: {actual_colocation}"
