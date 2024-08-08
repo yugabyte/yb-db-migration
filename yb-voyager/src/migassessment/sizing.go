@@ -70,15 +70,16 @@ type ExpDataThroughput struct {
 	insertConnPerNode          sql.NullInt64   `db:"insert_conn_per_node,string"`
 }
 
-type ExpDataShardedLoadTime struct {
+type ExpDataLoadTime struct {
 	csvSizeGB         sql.NullFloat64 `db:"csv_size_gb,string"`
 	migrationTimeSecs sql.NullFloat64 `db:"migration_time_secs,string"`
 	parallelThreads   sql.NullInt64   `db:"parallel_threads,string"`
 }
 
-type ExpDataShardedLoadTimeIndexImpact struct {
-	numIndexes           sql.NullFloat64 `db:"num_indexes,string"`
-	multiplicationFactor sql.NullFloat64 `db:"multiplication_factor,string"`
+type ExpDataLoadTimeIndexImpact struct {
+	numIndexes                    sql.NullFloat64 `db:"num_indexes,string"`
+	multiplicationFactorSharded   sql.NullFloat64 `db:"multiplication_factor_sharded,string"`
+	multiplicationFactorColocated sql.NullFloat64 `db:"multiplication_factor_colocated,string"`
 }
 
 type IntermediateRecommendation struct {
@@ -98,12 +99,12 @@ type IntermediateRecommendation struct {
 }
 
 const (
-	COLOCATED_LIMITS_TABLE               = "colocated_limits"
-	COLOCATED_SIZING_TABLE               = "colocated_sizing"
-	SHARDED_SIZING_TABLE                 = "sharded_sizing"
-	COLOCATED_LOAD_TIME_TABLE            = "colocated_load_time"
-	SHARDED_LOAD_TIME_TABLE              = "sharded_load_time"
-	SHARDED_LOAD_TIME_INDEX_IMPACT_TABLE = "sharded_load_time_index_impact"
+	COLOCATED_LIMITS_TABLE       = "colocated_limits"
+	COLOCATED_SIZING_TABLE       = "colocated_sizing"
+	SHARDED_SIZING_TABLE         = "sharded_sizing"
+	COLOCATED_LOAD_TIME_TABLE    = "colocated_load_time"
+	SHARDED_LOAD_TIME_TABLE      = "sharded_load_time"
+	LOAD_TIME_INDEX_IMPACT_TABLE = "load_time_index_impact"
 	// GITHUB_RAW_LINK use raw github link to fetch the file from repository using the api:
 	// https://raw.githubusercontent.com/{username-or-organization}/{repository}/{branch}/{path-to-file}
 	GITHUB_RAW_LINK               = "https://raw.githubusercontent.com/yugabyte/yb-voyager/main/yb-voyager/src/migassessment/resources"
@@ -118,6 +119,9 @@ const (
 	FINAL_PHASE_SIZE_THRESHOLD_GB = 100
 	MAX_TABLETS_PER_TABLE         = 256
 	PREFER_REMOTE_EXPERIMENT_DB   = false
+	// COLOCATED / SHARDED Object types
+	COLOCATED = "colocated"
+	SHARDED   = "sharded"
 )
 
 func getExperimentDBPath(assessmentDir string) string {
@@ -194,31 +198,43 @@ func SizingAssessment(assessmentDir string) error {
 	shardedObjects, cumulativeIndexCountSharded :=
 		getListOfIndexesAlongWithObjects(finalSizingRecommendation.ShardedTables, sourceIndexMetadata)
 
+	// get load times data from experimental database for sharded Tables
+	colocatedLoadTimes, err :=
+		getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
+			finalSizingRecommendation.MemoryPerCore, COLOCATED_LOAD_TIME_TABLE)
+	if err != nil {
+		return fmt.Errorf("error while fetching sharded load time info: %w", err)
+	}
+
+	// get load times data from experimental database for sharded Tables
+	shardedLoadTimes, err :=
+		getExpDataLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
+			finalSizingRecommendation.MemoryPerCore, SHARDED_LOAD_TIME_TABLE)
+	if err != nil {
+		return fmt.Errorf("error while fetching sharded load time info: %w", err)
+	}
+
+	// get experimental data for impact of indexes on colocated tables load
+	indexImpactOnLoadTimeCommon, err :=
+		getExpDataIndexImpactOnLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance,
+			finalSizingRecommendation.MemoryPerCore)
+	if err != nil {
+		return fmt.Errorf("error while fetching experiment data for impact of index on load time: %w", err)
+	}
+
 	// calculate time taken for colocated import
 	importTimeForColocatedObjects, parallelVoyagerJobsColocated, err :=
-		calculateTimeTakenAndParallelJobsForImportColocatedObjects(colocatedObjects,
-			finalSizingRecommendation.VCPUsPerInstance, finalSizingRecommendation.MemoryPerCore, experimentDB)
+		calculateTimeTakenAndParallelJobsForImport(finalSizingRecommendation.ColocatedTables, sourceIndexMetadata,
+			colocatedLoadTimes, indexImpactOnLoadTimeCommon, COLOCATED)
 	if err != nil {
 		SizingReport.FailureReasoning = fmt.Sprintf("calculate time taken for colocated data import: %v", err)
 		return fmt.Errorf("calculate time taken for colocated data import: %w", err)
 	}
 
-	// get load times data from experimental database for sharded Tables
-	shardedLoadTimes, err := getExpDataShardedLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance, finalSizingRecommendation.MemoryPerCore)
-	if err != nil {
-		return fmt.Errorf("error while fetching sharded load time info: %w", err)
-	}
-
-	// get experimental data for impact of indexes on sharded tables load
-	indexImpactData, err := getExpDataIndexImpactOnLoadTime(experimentDB, finalSizingRecommendation.VCPUsPerInstance, finalSizingRecommendation.MemoryPerCore)
-	if err != nil {
-		return fmt.Errorf("error while fetching experiment data for impact of index on load time: %w", err)
-	}
-
 	// calculate time taken for sharded import
 	importTimeForShardedObjects, parallelVoyagerJobsSharded, err :=
-		calculateTimeTakenAndParallelJobsForImportShardedObjects(finalSizingRecommendation.ShardedTables,
-			sourceIndexMetadata, shardedLoadTimes, indexImpactData)
+		calculateTimeTakenAndParallelJobsForImport(finalSizingRecommendation.ShardedTables, sourceIndexMetadata,
+			shardedLoadTimes, indexImpactOnLoadTimeCommon, SHARDED)
 	if err != nil {
 		SizingReport.FailureReasoning = fmt.Sprintf("calculate time taken for sharded data import: %v", err)
 		return fmt.Errorf("calculate time taken for sharded data import: %w", err)
@@ -919,19 +935,18 @@ func calculateTimeTakenAndParallelJobsForImportColocatedObjects(dbObjects []Sour
 }
 
 /*
-calculateTimeTakenAndParallelJobsForImportShardedObjects estimates the time taken for import of sharded tables.
-It queries experimental data to find import time estimates for similar object sizes and configurations. For every
-sharded table, it tries to find out how much time it would table for importing that table. The function adjusts the
+calculateTimeTakenAndParallelJobsForImport estimates the time taken for import of tables.
+It queries experimental data to find import time estimates for similar object sizes and configurations. For every table
+, it tries to find out how much time it would table for importing that table. The function adjusts the
 import time on that table by multiplying it by factor based on the indexes. The import time is also converted to
 minutes and returned.
 Parameters:
 
-	shardedTables: A slice containing metadata for the database objects to be migrated.
+	tables: A slice containing metadata for the database objects to be migrated.
 	sourceIndexMetadata: A slice containing metadata for the indexes of the database objects to be migrated.
-	vCPUPerInstance: The number of virtual CPUs per instance used for import.
-	memPerCore: The memory allocated per CPU core used for import.
-	experimentDB: A connection to the experiment database.
-	indexImpact: Data containing impact of indexes on load time.
+	loadTimes: Experiment data for impact of load times on tables
+	indexImpacts: Data containing impact of indexes on load time.
+	objectType: COLOCATED or SHARDED
 
 Returns:
 
@@ -939,29 +954,30 @@ Returns:
 	int64: Total parallel jobs used for import.
 	error: Error if any
 */
-func calculateTimeTakenAndParallelJobsForImportShardedObjects(shardedTables []SourceDBMetadata,
-	sourceIndexMetadata []SourceDBMetadata, shardedLoadTimes []ExpDataShardedLoadTime,
-	indexImpacts []ExpDataShardedLoadTimeIndexImpact) (float64, int64, error) {
+func calculateTimeTakenAndParallelJobsForImport(tables []SourceDBMetadata,
+	sourceIndexMetadata []SourceDBMetadata, loadTimes []ExpDataLoadTime,
+	indexImpacts []ExpDataLoadTimeIndexImpact, objectType string) (float64, int64, error) {
 	var importTime float64
 
-	// for sharded objects we need to calculate the time taken for import for every table.
+	// we need to calculate the time taken for import for every table.
 	// For every index, the time taken for import increases.
 	// find the rows in experiment data about the approx row matching the size
-	for _, table := range shardedTables {
-		// find closest record from experiment data for the size of the table
+	for _, table := range tables {
+		// find the closest record from experiment data for the size of the table
 		tableSize := lo.Ternary(table.Size.Valid, table.Size.Float64, 0)
-		closestLoadTime := findClosestRecordFromExpDataShardedLoadTime(shardedLoadTimes, tableSize)
+		closestLoadTime := findClosestRecordFromExpDataLoadTime(loadTimes, tableSize)
 		// get multiplication factor for every table based on the number of indexes
-		loadTimeMultiplicationFactor := getMultiplicationFactorForImportTimeBasedOnIndexes(table, sourceIndexMetadata, indexImpacts)
+		loadTimeMultiplicationFactor :=
+			getMultiplicationFactorForImportTimeBasedOnIndexes(table, sourceIndexMetadata, indexImpacts, objectType)
 		// calculate the time taken for import for every table and add it to overall import time
 		importTime += loadTimeMultiplicationFactor * ((closestLoadTime.migrationTimeSecs.Float64 * tableSize) / closestLoadTime.csvSizeGB.Float64) / 60
 	}
 
-	return math.Ceil(importTime), shardedLoadTimes[0].parallelThreads.Int64, nil
+	return math.Ceil(importTime), loadTimes[0].parallelThreads.Int64, nil
 }
 
 /*
-getExpDataShardedLoadTime fetches sharded load time information from the experiment data table.
+getExpDataLoadTime fetches load time information from the experiment data table.
 Parameters:
 
 	experimentDB: Connection to the experiment database
@@ -970,10 +986,10 @@ Parameters:
 
 Returns:
 
-	[]ExpDataShardedLoadTime: A slice containing the fetched sharded load time information.
+	[]ExpDataLoadTime: A slice containing the fetched load time information.
 	error: Error if any.
 */
-func getExpDataShardedLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore int) ([]ExpDataShardedLoadTime, error) {
+func getExpDataLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore int, tableType string) ([]ExpDataLoadTime, error) {
 	selectQuery := fmt.Sprintf(`
 		SELECT csv_size_gb, 
 			   migration_time_secs, 
@@ -982,7 +998,7 @@ func getExpDataShardedLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPer
 		WHERE num_cores = ? 
 			AND mem_per_core = ?
 		ORDER BY csv_size_gb;
-	`, SHARDED_LOAD_TIME_TABLE)
+	`, tableType)
 	rows, err := experimentDB.Query(selectQuery, vCPUPerInstance, memPerCore)
 
 	if err != nil {
@@ -994,16 +1010,16 @@ func getExpDataShardedLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPer
 		}
 	}()
 
-	var shardedLoadTimes []ExpDataShardedLoadTime
+	var loadTimes []ExpDataLoadTime
 	for rows.Next() {
-		var shardedLoadTime ExpDataShardedLoadTime
-		if err = rows.Scan(&shardedLoadTime.csvSizeGB, &shardedLoadTime.migrationTimeSecs,
-			&shardedLoadTime.parallelThreads); err != nil {
-			return nil, fmt.Errorf("cannot fetch data from experiment data table with query [%s]: %w", selectQuery, err)
+		var loadTime ExpDataLoadTime
+		if err = rows.Scan(&loadTime.csvSizeGB, &loadTime.migrationTimeSecs, &loadTime.parallelThreads); err != nil {
+			return nil, fmt.Errorf("cannot fetch data from experiment data table with query [%s]: %w",
+				selectQuery, err)
 		}
-		shardedLoadTimes = append(shardedLoadTimes, shardedLoadTime)
+		loadTimes = append(loadTimes, loadTime)
 	}
-	return shardedLoadTimes, nil
+	return loadTimes, nil
 }
 
 /*
@@ -1019,15 +1035,16 @@ Returns:
 	[]ExpDataShardedLoadTimeIndexImpact: A slice containing the fetched load time information based on number of indexes.
 	error: Error if any.
 */
-func getExpDataIndexImpactOnLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore int) ([]ExpDataShardedLoadTimeIndexImpact, error) {
+func getExpDataIndexImpactOnLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore int) ([]ExpDataLoadTimeIndexImpact, error) {
 	selectQuery := fmt.Sprintf(`
 		SELECT number_of_indexes, 
-			   multiplication_factor
+			   multiplication_factor_sharded,
+			   multiplication_factor_colocated
 		FROM %v 
 		WHERE num_cores = ? 
 			AND mem_per_core = ?
 		ORDER BY number_of_indexes;
-	`, SHARDED_LOAD_TIME_INDEX_IMPACT_TABLE)
+	`, LOAD_TIME_INDEX_IMPACT_TABLE)
 	rows, err := experimentDB.Query(selectQuery, vCPUPerInstance, memPerCore)
 
 	if err != nil {
@@ -1039,29 +1056,30 @@ func getExpDataIndexImpactOnLoadTime(experimentDB *sql.DB, vCPUPerInstance int, 
 		}
 	}()
 
-	var shardedLoadTimeIndexImpacts []ExpDataShardedLoadTimeIndexImpact
+	var loadTimeIndexImpacts []ExpDataLoadTimeIndexImpact
 	for rows.Next() {
-		var shardedLoadTimeIndexImpact ExpDataShardedLoadTimeIndexImpact
-		if err = rows.Scan(&shardedLoadTimeIndexImpact.numIndexes, &shardedLoadTimeIndexImpact.multiplicationFactor); err != nil {
+		var loadTimeIndexImpact ExpDataLoadTimeIndexImpact
+		if err = rows.Scan(&loadTimeIndexImpact.numIndexes, &loadTimeIndexImpact.multiplicationFactorSharded,
+			&loadTimeIndexImpact.multiplicationFactorColocated); err != nil {
 			return nil, fmt.Errorf("cannot fetch data from experiment data table with query [%s]: %w", selectQuery, err)
 		}
-		shardedLoadTimeIndexImpacts = append(shardedLoadTimeIndexImpacts, shardedLoadTimeIndexImpact)
+		loadTimeIndexImpacts = append(loadTimeIndexImpacts, loadTimeIndexImpact)
 	}
-	return shardedLoadTimeIndexImpacts, nil
+	return loadTimeIndexImpacts, nil
 }
 
 /*
-findClosestRecordFromExpDataShardedLoadTime finds the closest record from the experiment data for the size of the table.
+findClosestRecordFromExpDataLoadTime finds the closest record from the experiment data for the size of the table.
 Parameters:
 
-	loadTimes: A slice containing the fetched sharded load time information.
+	loadTimes: A slice containing the fetched load time information.
 	objectSize: The size of the table in gigabytes.
 
 Returns:
 
-	ExpDataShardedLoadTime: The closest record from the experiment data for the size of the table which is closest to the object size.
+	ExpDataLoadTime: The closest record from the experiment data for the size of the table which is closest to the object size.
 */
-func findClosestRecordFromExpDataShardedLoadTime(loadTimes []ExpDataShardedLoadTime, objectSize float64) ExpDataShardedLoadTime {
+func findClosestRecordFromExpDataLoadTime(loadTimes []ExpDataLoadTime, objectSize float64) ExpDataLoadTime {
 	closest := loadTimes[0]
 	minDiff := math.Abs(objectSize - closest.csvSizeGB.Float64)
 
@@ -1084,14 +1102,17 @@ Parameters:
 
 	table: Metadata for the database table for which the multiplication factor is to be calculated.
 	sourceIndexMetadata: A slice containing metadata for the indexes in the database.
+	objectType: COLOCATED or SHARDED
 
 Returns:
 
 	float64: The multiplication factor for import time based on the number of indexes on the table.
 */
 func getMultiplicationFactorForImportTimeBasedOnIndexes(table SourceDBMetadata, sourceIndexMetadata []SourceDBMetadata,
-	indexImpacts []ExpDataShardedLoadTimeIndexImpact) float64 {
+	indexImpacts []ExpDataLoadTimeIndexImpact, objectType string) float64 {
 	var numberOfIndexesOnTable float64 = 0
+	var multiplicationFactor float64 = 1
+
 	for _, index := range sourceIndexMetadata {
 		if index.ParentTableName.Valid && index.ParentTableName.String == (table.SchemaName+"."+table.ObjectName) {
 			numberOfIndexesOnTable += 1
@@ -1111,8 +1132,14 @@ func getMultiplicationFactorForImportTimeBasedOnIndexes(table SourceDBMetadata, 
 				closest = indexImpactData
 			}
 		}
-		// impact on load time fo r given table would be relative to the closest record's impact
-		return (closest.multiplicationFactor.Float64 / closest.numIndexes.Float64) * numberOfIndexesOnTable
+		// impact on load time for given table would be relative to the closest record's impact
+		if objectType == COLOCATED {
+			multiplicationFactor = (closest.multiplicationFactorColocated.Float64 / closest.numIndexes.Float64) * numberOfIndexesOnTable
+		} else if objectType == SHARDED {
+			multiplicationFactor = (closest.multiplicationFactorSharded.Float64 / closest.numIndexes.Float64) * numberOfIndexesOnTable
+		}
+
+		return multiplicationFactor
 	}
 }
 

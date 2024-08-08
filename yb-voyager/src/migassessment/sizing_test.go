@@ -844,14 +844,15 @@ func TestCalculateTimeTakenAndParallelJobsForImportShardedObjects_ValidateImport
 		{ObjectName: "table0", SchemaName: "public", Size: sql.NullFloat64{Float64: 23.0, Valid: true}},
 	}
 	var sourceIndexMetadata []SourceDBMetadata
-	shardedLoadTimes := []ExpDataShardedLoadTime{
+	shardedLoadTimes := []ExpDataLoadTime{
 		{csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134}, parallelThreads: sql.NullInt64{Int64: 1}},
 		{csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657}, parallelThreads: sql.NullInt64{Int64: 1}},
 	}
-	var indexImpacts []ExpDataShardedLoadTimeIndexImpact
+	var indexImpacts []ExpDataLoadTimeIndexImpact
 	// Call the function
 	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImportShardedObjects(shardedTables, sourceIndexMetadata, shardedLoadTimes, indexImpacts)
+		calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
+			indexImpacts, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -876,17 +877,18 @@ func TestCalculateTimeTakenAndParallelJobsForImportShardedObjects_ValidateImport
 	sourceIndexMetadata := []SourceDBMetadata{
 		{ObjectName: "table0_idx1", ParentTableName: sql.NullString{Valid: true, String: "public.table0"}},
 	}
-	shardedLoadTimes := []ExpDataShardedLoadTime{
+	shardedLoadTimes := []ExpDataLoadTime{
 		{csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134}, parallelThreads: sql.NullInt64{Int64: 1}},
 		{csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657}, parallelThreads: sql.NullInt64{Int64: 1}},
 	}
-	indexImpacts := []ExpDataShardedLoadTimeIndexImpact{
-		{numIndexes: sql.NullFloat64{Float64: 1}, multiplicationFactor: sql.NullFloat64{Float64: 1.76}},
+	indexImpacts := []ExpDataLoadTimeIndexImpact{
+		{numIndexes: sql.NullFloat64{Float64: 1}, multiplicationFactorSharded: sql.NullFloat64{Float64: 1.76}},
 	}
 
 	// Call the function
 	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImportShardedObjects(shardedTables, sourceIndexMetadata, shardedLoadTimes, indexImpacts)
+		calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
+			indexImpacts, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -915,19 +917,20 @@ func TestCalculateTimeTakenAndParallelJobsForImportShardedObjects_ValidateImport
 		{ObjectName: "table0_idx4", ParentTableName: sql.NullString{Valid: true, String: "public.table0"}},
 		{ObjectName: "table0_idx5", ParentTableName: sql.NullString{Valid: true, String: "public.table0"}},
 	}
-	shardedLoadTimes := []ExpDataShardedLoadTime{
+	shardedLoadTimes := []ExpDataLoadTime{
 		{csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134}, parallelThreads: sql.NullInt64{Int64: 1}},
 		{csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657}, parallelThreads: sql.NullInt64{Int64: 1}},
 	}
 
-	indexImpacts := []ExpDataShardedLoadTimeIndexImpact{
-		{numIndexes: sql.NullFloat64{Float64: 1}, multiplicationFactor: sql.NullFloat64{Float64: 1.76}},
-		{numIndexes: sql.NullFloat64{Float64: 5}, multiplicationFactor: sql.NullFloat64{Float64: 4.6}},
+	indexImpacts := []ExpDataLoadTimeIndexImpact{
+		{numIndexes: sql.NullFloat64{Float64: 1}, multiplicationFactorSharded: sql.NullFloat64{Float64: 1.76}},
+		{numIndexes: sql.NullFloat64{Float64: 5}, multiplicationFactorSharded: sql.NullFloat64{Float64: 4.6}},
 	}
 
 	// Call the function
 	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImportShardedObjects(shardedTables, sourceIndexMetadata, shardedLoadTimes, indexImpacts)
+		calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
+			indexImpacts, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
