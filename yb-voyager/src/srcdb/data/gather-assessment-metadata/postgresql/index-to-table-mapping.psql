@@ -15,8 +15,7 @@ JOIN
 JOIN
     pg_namespace tbl_nsp ON tbl.relnamespace = tbl_nsp.oid
 WHERE
-    idx_nsp.nspname = ANY(ARRAY[string_to_array(:'schema_list', '|')])
-    AND NOT i.indisprimary;
+    idx_nsp.nspname = ANY(ARRAY[string_to_array(:'schema_list', '|')]);
 
 \copy temp_table to 'index-to-table-mapping.csv' WITH CSV HEADER;
 
