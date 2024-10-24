@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import yb
 
 def main():
@@ -14,6 +15,8 @@ EXPECTED_ROW_COUNT = {
 	'audit': 4,
 	'c':12,
 	'foo': 34,
+	'cities': 7,
+	'capitals':7
 }
 
 EXPECTED_TEXT_LENGTHS = {
@@ -53,6 +56,8 @@ EXPECTED_TEXT_LENGTHS = {
     34: 24,
 }
 
+if os.environ.get("BETA_FAST_DATA_EXPORT") == '1':
+	EXPECTED_ROW_COUNT["cities"] = 14
 
 def YB_specific_checks(tgt):
 	yb.verify_colocation(tgt, "postgresql")
@@ -60,7 +65,7 @@ def YB_specific_checks(tgt):
 def migration_completed_checks(tgt):
 	table_list = tgt.get_table_names("public")
 	print("table_list:", table_list)
-	assert len(table_list) == 5 
+	assert len(table_list) == 7 
 
 	got_row_count = tgt.row_count_of_all_tables("public")
 	for table_name, row_count in EXPECTED_ROW_COUNT.items():

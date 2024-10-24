@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+sed -i  's/CREATE TABLE public.capitals (/CREATE TABLE public.capitals (\n    name TEXT,\n    population REAL,\n    elevation INT,/g' $TEST_DIR/export-dir/schema/tables/table.sql
+sed -i  's/INHERITS (public.cities)/ /g' $TEST_DIR/export-dir/schema/tables/table.sql

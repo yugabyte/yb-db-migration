@@ -37,8 +37,8 @@
 			},
 			{
 				"ObjectType": "TABLE",
-				"TotalCount": 63,
-				"ObjectNames": "public.\"Case_Sensitive_Columns\", public.\"Mixed_Case_Table_Name_Test\", public.\"Recipients\", public.\"WITH\", public.audit, public.sales_region, public.boston, public.c, public.parent_table, public.child_table, public.citext_type, public.combined_tbl, public.documents, public.employees2, public.ext_test, public.foo, public.inet_type, public.london, public.mixed_data_types_table1, public.mixed_data_types_table2, public.orders, public.orders2, public.products, public.session_log, public.session_log1, public.session_log2, public.sydney, public.test_exclude_basic, public.test_jsonb, public.test_xml_type, public.ts_query_table, public.tt, public.with_example1, public.with_example2, schema2.\"Case_Sensitive_Columns\", schema2.\"Mixed_Case_Table_Name_Test\", schema2.\"Recipients\", schema2.\"WITH\", schema2.audit, schema2.sales_region, schema2.boston, schema2.c, schema2.parent_table, schema2.child_table, schema2.employees2, schema2.ext_test, schema2.foo, schema2.london, schema2.mixed_data_types_table1, schema2.mixed_data_types_table2, schema2.orders, schema2.orders2, schema2.products, schema2.session_log, schema2.session_log1, schema2.session_log2, schema2.sydney, schema2.test_xml_type, schema2.tt, schema2.with_example1, schema2.with_example2, test_views.view_table1, test_views.view_table2"
+				"TotalCount": 67,
+				"ObjectNames": "public.cities, public.capitals, schema2.cities, schema2.capitals, public.\"Case_Sensitive_Columns\", public.\"Mixed_Case_Table_Name_Test\", public.\"Recipients\", public.\"WITH\", public.audit, public.sales_region, public.boston, public.c, public.parent_table, public.child_table, public.citext_type, public.combined_tbl, public.documents, public.employees2, public.ext_test, public.foo, public.inet_type, public.london, public.mixed_data_types_table1, public.mixed_data_types_table2, public.orders, public.orders2, public.products, public.session_log, public.session_log1, public.session_log2, public.sydney, public.test_exclude_basic, public.test_jsonb, public.test_xml_type, public.ts_query_table, public.tt, public.with_example1, public.with_example2, schema2.\"Case_Sensitive_Columns\", schema2.\"Mixed_Case_Table_Name_Test\", schema2.\"Recipients\", schema2.\"WITH\", schema2.audit, schema2.sales_region, schema2.boston, schema2.c, schema2.parent_table, schema2.child_table, schema2.employees2, schema2.ext_test, schema2.foo, schema2.london, schema2.mixed_data_types_table1, schema2.mixed_data_types_table2, schema2.orders, schema2.orders2, schema2.products, schema2.session_log, schema2.session_log1, schema2.session_log2, schema2.sydney, schema2.test_xml_type, schema2.tt, schema2.with_example1, schema2.with_example2, test_views.view_table1, test_views.view_table2"
 			},
 			{
 				"ObjectType": "INDEX",
@@ -104,6 +104,10 @@
 				"public.child_table",
 				"public.parent_table",
 				"public.documents",
+				"public.cities",
+				"public.capitals",
+				"schema2.cities",
+				"schema2.capitals",
 				"schema2.child_table",
 				"schema2.parent_table",
 				"schema2.tbl_unlogged",
@@ -153,7 +157,7 @@
 				"test_views.abc_mview",
 				"test_views.view_table1"
 			],
-			"ColocatedReasoning": "Recommended instance type with 4 vCPU and 16 GiB memory could fit 69 objects (61 tables/materialized views and 8 explicit/implicit indexes) with 0.00 MB size and throughput requirement of 0 reads/sec and 0 writes/sec as colocated. Rest 24 objects (5 tables/materialized views and 19 explicit/implicit indexes) with 0.00 MB size and throughput requirement of 0 reads/sec and 0 writes/sec need to be migrated as range partitioned tables. Non leaf partition tables/indexes and unsupported tables/indexes were not considered.",
+			"ColocatedReasoning": "Recommended instance type with 4 vCPU and 16 GiB memory could fit 73 objects (65 tables/materialized views and 8 explicit/implicit indexes) with 0.00 MB size and throughput requirement of 0 reads/sec and 0 writes/sec as colocated. Rest 24 objects (5 tables/materialized views and 19 explicit/implicit indexes) with 0.00 MB size and throughput requirement of 0 reads/sec and 0 writes/sec need to be migrated as range partitioned tables. Non leaf partition tables/indexes and unsupported tables/indexes were not considered.",
 			"ShardedTables": [
 				"public.combined_tbl",
 				"public.citext_type",
@@ -276,6 +280,14 @@
 		{
 			"FeatureName": "Inherited tables",
 			"Objects": [
+				{
+					"ObjectName": "public.capitals",
+					"SqlStatement": "CREATE TABLE public.capitals (     state character(2) NOT NULL ) INHERITS (public.cities);"
+				},
+				{
+					"ObjectName": "schema2.capitals",
+					"SqlStatement": "CREATE TABLE schema2.capitals (     state character(2) NOT NULL ) INHERITS (schema2.cities);"
+				},
 				{
 					"ObjectName": "public.child_table",
 					"SqlStatement": "CREATE TABLE public.child_table (\n    specific_column1 date\n)\nINHERITS (public.parent_table);"
@@ -711,6 +723,62 @@
 			"ObjectType": "",
 			"ParentTableName": null,
 			"SizeInBytes": 0
+		},
+		{
+			"SchemaName": "public",
+			"ObjectName": "capitals",
+			"RowCount": 0,
+			"ColumnCount": 4,
+			"Reads": 0,
+			"Writes": 7,
+			"ReadsPerSecond": 0,
+			"WritesPerSecond": 0,
+			"IsIndex": false,
+			"ObjectType": "",
+			"ParentTableName": null,
+			"SizeInBytes": 8192
+		},
+		{
+			"SchemaName": "schema2",
+			"ObjectName": "capitals",
+			"RowCount": 0,
+			"ColumnCount": 4,
+			"Reads": 0,
+			"Writes": 7,
+			"ReadsPerSecond": 0,
+			"WritesPerSecond": 0,
+			"IsIndex": false,
+			"ObjectType": "",
+			"ParentTableName": null,
+			"SizeInBytes": 8192
+		},
+		{
+			"SchemaName": "public",
+			"ObjectName": "cities",
+			"RowCount": 0,
+			"ColumnCount": 3,
+			"Reads": 0,
+			"Writes": 7,
+			"ReadsPerSecond": 0,
+			"WritesPerSecond": 0,
+			"IsIndex": false,
+			"ObjectType": "",
+			"ParentTableName": null,
+			"SizeInBytes": 8192
+		},
+		{
+			"SchemaName": "schema2",
+			"ObjectName": "cities",
+			"RowCount": 0,
+			"ColumnCount": 3,
+			"Reads": 0,
+			"Writes": 7,
+			"ReadsPerSecond": 0,
+			"WritesPerSecond": 0,
+			"IsIndex": false,
+			"ObjectType": "",
+			"ParentTableName": null,
+			"SizeInBytes": 8192
 		},
 		{
 			"SchemaName": "public",

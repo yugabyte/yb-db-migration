@@ -13,7 +13,7 @@ EXPECTED_TRIGGER_LIST = ["audit_trigger",]
 def migration_completed_checks(tgt):
 	table_list = tgt.get_table_names("public")
 	print("table_list:", table_list)
-	assert len(table_list) == 5 
+	assert len(table_list) == 7
 
 	fetched_triggers = tgt.fetch_all_triggers("public")
 	print(f"fetched triggers list: {fetched_triggers}\n Expected triggers: {EXPECTED_TRIGGER_LIST}")

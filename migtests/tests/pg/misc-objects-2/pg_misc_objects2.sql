@@ -178,3 +178,35 @@ INSERT INTO foo (id, value) VALUES (31, E'Text with \r\nText with \\r\\nText wit
 INSERT INTO foo (id, value) VALUES (32, E'\n\rText with \r');
 INSERT INTO foo (id, value) VALUES (33, E'Text with \n\r');
 INSERT INTO foo (id, value) VALUES (34, E'Text with \r\nText with \n\r');
+
+
+CREATE TABLE cities (
+    name       TEXT,
+    population REAL,
+    elevation  INT
+);
+ 
+CREATE TABLE capitals (
+    state CHAR(2) NOT NULL
+) INHERITS (cities);
+
+-- Inserting into the parent table
+INSERT INTO cities (name, population, elevation) VALUES 
+('San Francisco', 884363, 16),
+('Denver', 704621, 1609),
+('Los Angeles', 3980400, 71),
+('Chicago', 2716000, 594),
+('Miami', 467963, 2),
+('Seattle', 744955, 184),
+('Boston', 694583, 43);
+
+
+-- Inserting into the child table (capital)
+INSERT INTO capitals (name, population, elevation, state) VALUES 
+('Sacramento', 508529, 9, 'CA'),
+('Denver', 704621, 1609, 'CO'),
+('Phoenix', 1660272, 331, 'AZ'),
+('Austin', 964254, 149, 'TX'),
+('Tallahassee', 191049, 62, 'FL'),
+('Olympia', 52389, 95, 'WA'),
+('Boston', 694583, 43, 'MA');
