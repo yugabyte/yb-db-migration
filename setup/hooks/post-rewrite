@@ -6,6 +6,26 @@ DIR_NAME="gather-assessment-metadata"
 OUTPUT_TAR="yb-voyager/src/srcdb/data/gather-assessment-metadata.tar.gz"
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
+# Function to check if tarball is up to date
+is_up_to_date() {
+    if [ ! -f "$REPO_ROOT/$OUTPUT_TAR" ]; then
+        return 1
+    fi
+
+    for file in $(find "$REPO_ROOT/$PARENT_DIR/$DIR_NAME" -type f); do
+        if [ "$file" -nt "$REPO_ROOT/$OUTPUT_TAR" ]; then
+            return 1 # Needs update
+        fi
+    done
+
+    return 0 # No update needed
+}
+
+if is_up_to_date; then
+    echo "No changes detected, tarball is up to date."
+    exit 0
+fi
+
 pushd "$REPO_ROOT/$PARENT_DIR" > /dev/null
 tar -czf "$REPO_ROOT/$OUTPUT_TAR" $DIR_NAME
 popd > /dev/null
