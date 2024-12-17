@@ -234,7 +234,7 @@ func (pg *TargetPostgreSQL) InitConnPool() error {
 	for _, tconf := range tconfs {
 		targetUriList = append(targetUriList, tconf.Uri)
 	}
-	log.Infof("targetUriList: %s", utils.GetRedactedURLs(targetUriList))
+	log.Infof("targetUriList: %s", utils.GetRedactedURLs(targetUriList...))
 
 	if pg.tconf.Parallelism == 0 {
 		pg.tconf.Parallelism = fetchDefaultParallelJobs(tconfs, PG_DEFAULT_PARALLELISM_FACTOR)

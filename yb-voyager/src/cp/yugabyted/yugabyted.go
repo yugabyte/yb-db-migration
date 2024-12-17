@@ -20,7 +20,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -39,6 +38,7 @@ import (
 type YugabyteD struct {
 	sync.Mutex
 	migrationDirectory       string
+	connString               string
 	voyagerInfo              *controlPlane.VoyagerInstance
 	waitGroup                sync.WaitGroup
 	eventChan                chan (MigrationEvent)
@@ -48,11 +48,12 @@ type YugabyteD struct {
 	latestInvocationSequence int
 }
 
-func New(exportDir string) *YugabyteD {
+func New(exportDir string, connString string) *YugabyteD {
 	vi := prepareVoyagerInstance(exportDir)
 	return &YugabyteD{
 		voyagerInfo:        vi,
 		migrationDirectory: exportDir,
+		connString:         connString,
 	}
 }
 
@@ -377,9 +378,8 @@ func (cp *YugabyteD) connect() error {
 	if cp.connPool != nil {
 		return nil
 	}
-	connectionUri := os.Getenv("YUGABYTED_DB_CONN_STRING")
 
-	connPool, err := pgxpool.Connect(context.Background(), connectionUri)
+	connPool, err := pgxpool.Connect(context.Background(), cp.connString)
 	if err != nil {
 		return fmt.Errorf("error while connecting to yugabyted db. error: %w", err)
 	}

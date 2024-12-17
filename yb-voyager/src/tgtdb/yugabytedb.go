@@ -221,7 +221,7 @@ func (yb *TargetYugabyteDB) InitConnPool() error {
 	for _, tconf := range tconfs {
 		targetUriList = append(targetUriList, tconf.Uri)
 	}
-	log.Infof("targetUriList: %s", utils.GetRedactedURLs(targetUriList))
+	log.Infof("targetUriList: %s", utils.GetRedactedURLs(targetUriList...))
 
 	if yb.tconf.Parallelism <= 0 {
 		yb.tconf.Parallelism = fetchDefaultParallelJobs(tconfs, YB_DEFAULT_PARALLELISM_FACTOR)
@@ -925,7 +925,7 @@ func fetchCores(tconfs []*TargetConf) (int, error) {
 	targetCores := 0
 	totalCores := 0
 	for _, tconf := range tconfs {
-		log.Infof("Determining CPU core count on: %s", utils.GetRedactedURLs([]string{tconf.Uri})[0])
+		log.Infof("Determining CPU core count on: %s", utils.GetRedactedURLs(tconf.Uri)[0])
 		conn, err := pgx.Connect(context.Background(), tconf.Uri)
 		if err != nil {
 			log.Warnf("Unable to reach target while querying cores: %v", err)
@@ -943,7 +943,7 @@ func fetchCores(tconfs []*TargetConf) (int, error) {
 		cmd = "COPY yb_voyager_cores(num_cores) FROM PROGRAM 'grep processor /proc/cpuinfo|wc -l';"
 		_, err = conn.Exec(context.Background(), cmd)
 		if err != nil {
-			log.Warnf("Error while running query %s on host %s: %v", cmd, utils.GetRedactedURLs([]string{tconf.Uri}), err)
+			log.Warnf("Error while running query %s on host %s: %v", cmd, utils.GetRedactedURLs(tconf.Uri), err)
 			return 0, err
 		}
 

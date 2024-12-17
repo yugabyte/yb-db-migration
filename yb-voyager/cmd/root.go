@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -369,9 +371,15 @@ func setControlPlane(cpType string) {
 		if ybdConnString == "" {
 			utils.ErrExit("'YUGABYTED_DB_CONN_STRING' environment variable needs to be set if 'CONTROL_PLANE_TYPE' is 'yugabyted'.")
 		}
-		controlPlane = yugabyted.New(exportDir)
+
+		ybdConnString, err := normalizeYugabytedDBConnString(ybdConnString)
+		if err != nil {
+			utils.ErrExit("%s", err.Error())
+		}
+
+		controlPlane = yugabyted.New(exportDir, ybdConnString)
 		log.Infof("Migration UUID %s", migrationUUID)
-		err := controlPlane.Init()
+		err = controlPlane.Init()
 		if err != nil {
 			utils.ErrExit("ERROR: Failed to initialize the target DB for visualization. %s", err)
 		}
@@ -380,4 +388,32 @@ func setControlPlane(cpType string) {
 
 func getControlPlaneType() string {
 	return os.Getenv("CONTROL_PLANE_TYPE")
+}
+
+func normalizeYugabytedDBConnString(connStr string) (string, error) {
+	if !strings.HasPrefix(connStr, "postgresql://") {
+		return "", fmt.Errorf("Invalid format: YUGABYTED_DB_CONN_STRING must start with 'postgresql://'")
+	}
+
+	u, err := url.Parse(connStr)
+	if err != nil {
+		return "", fmt.Errorf("Failed to parse YUGABYTED_DB_CONN_STRING: %w", err)
+	}
+
+	if u.User.Username() == "" {
+		return "", fmt.Errorf("Username not provided in YUGABYTED_DB_CONN_STRING: %s", utils.GetRedactedURLs(connStr)[0])
+	}
+	if _, passwordSet := u.User.Password(); !passwordSet {
+		return "", fmt.Errorf("Password not provided in YUGABYTED_DB_CONN_STRING: %s", utils.GetRedactedURLs(connStr)[0])
+	}
+	if u.Hostname() == "" || u.Port() == "" {
+		return "", fmt.Errorf("Host or port not provided in YUGABYTED_DB_CONN_STRING: %s", utils.GetRedactedURLs(connStr)[0])
+	}
+
+	u.RawQuery = "" // Removing SSL or any other query params
+	u.Path = ""     // Removing the database name
+
+	// Rebuilding the connection string without Path and RawQuery
+	newConnStr := u.String()
+	return newConnStr, nil
 }

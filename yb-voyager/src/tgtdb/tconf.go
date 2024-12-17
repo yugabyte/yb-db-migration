@@ -117,7 +117,7 @@ func generateSSLQueryStringIfNotExists(t *TargetConf) string {
 
 func GetRedactedTargetConf(t *TargetConf) *TargetConf {
 	redacted := *t
-	redacted.Uri = utils.GetRedactedURLs([]string{t.Uri})[0]
+	redacted.Uri = utils.GetRedactedURLs(t.Uri)[0]
 	redacted.Password = "XXX"
 	return &redacted
 }

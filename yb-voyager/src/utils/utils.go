@@ -426,7 +426,7 @@ func ToCaseInsensitiveNames(names []string) []string {
 	return names
 }
 
-func GetRedactedURLs(urlList []string) []string {
+func GetRedactedURLs(urlList ...string) []string {
 	result := []string{}
 	for _, u := range urlList {
 		obj, err := url.Parse(u)

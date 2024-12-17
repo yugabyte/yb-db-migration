@@ -255,7 +255,7 @@ func (pool *ConnectionPool) createNewConnection() (*pgx.Conn, error) {
 
 func (pool *ConnectionPool) connect(uri string) (*pgx.Conn, error) {
 	conn, err := pgx.Connect(context.Background(), uri)
-	redactedUri := utils.GetRedactedURLs([]string{uri})[0]
+	redactedUri := utils.GetRedactedURLs(uri)[0]
 	if err != nil {
 		log.Warnf("Failed to connect to %q: %s", redactedUri, err)
 		return nil, err
