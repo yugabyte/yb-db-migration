@@ -74,7 +74,6 @@ type ExpDataThroughput struct {
 type ExpDataLoadTime struct {
 	csvSizeGB         sql.NullFloat64 `db:"csv_size_gb,string"`
 	migrationTimeSecs sql.NullFloat64 `db:"migration_time_secs,string"`
-	parallelThreads   sql.NullInt64   `db:"parallel_threads,string"`
 	rowCount          sql.NullFloat64 `db:"row_count,string"`
 }
 
@@ -101,7 +100,6 @@ type IntermediateRecommendation struct {
 	OptimalSelectConnectionsPerNode int64
 	OptimalInsertConnectionsPerNode int64
 	EstimatedTimeInMinForImport     float64
-	ParallelVoyagerJobs             float64
 	FailureReasoning                string
 }
 
@@ -238,7 +236,7 @@ func SizingAssessment() error {
 	}
 
 	// calculate time taken for colocated import
-	importTimeForColocatedObjects, parallelVoyagerJobsColocated, err := calculateTimeTakenAndParallelJobsForImport(
+	importTimeForColocatedObjects, err := calculateTimeTakenForImport(
 		finalSizingRecommendation.ColocatedTables, sourceIndexMetadata, colocatedLoadTimes,
 		indexImpactOnLoadTimeCommon, columnsImpactOnLoadTimeCommon, COLOCATED)
 	if err != nil {
@@ -247,7 +245,7 @@ func SizingAssessment() error {
 	}
 
 	// calculate time taken for sharded import
-	importTimeForShardedObjects, parallelVoyagerJobsSharded, err := calculateTimeTakenAndParallelJobsForImport(
+	importTimeForShardedObjects, err := calculateTimeTakenForImport(
 		finalSizingRecommendation.ShardedTables, sourceIndexMetadata, shardedLoadTimes,
 		indexImpactOnLoadTimeCommon, columnsImpactOnLoadTimeCommon, SHARDED)
 	if err != nil {
@@ -265,7 +263,6 @@ func SizingAssessment() error {
 		NumNodes:                        finalSizingRecommendation.NumNodes,
 		OptimalSelectConnectionsPerNode: finalSizingRecommendation.OptimalSelectConnectionsPerNode,
 		OptimalInsertConnectionsPerNode: finalSizingRecommendation.OptimalInsertConnectionsPerNode,
-		ParallelVoyagerJobs:             math.Min(float64(parallelVoyagerJobsColocated), float64(parallelVoyagerJobsSharded)),
 		ColocatedReasoning:              reasoning,
 		EstimatedTimeInMinForImport:     importTimeForColocatedObjects + importTimeForShardedObjects,
 	}
@@ -375,7 +372,6 @@ func findNumNodesNeededBasedOnThroughputRequirement(sourceIndexMetadata []Source
 			NumNodes:                        nodesNeeded,
 			OptimalSelectConnectionsPerNode: int64(math.Min(float64(previousRecommendation.OptimalSelectConnectionsPerNode), float64(shardedThroughput.selectConnPerNode.Int64))),
 			OptimalInsertConnectionsPerNode: int64(math.Min(float64(previousRecommendation.OptimalInsertConnectionsPerNode), float64(shardedThroughput.insertConnPerNode.Int64))),
-			ParallelVoyagerJobs:             previousRecommendation.ParallelVoyagerJobs,
 			ColocatedSize:                   previousRecommendation.ColocatedSize,
 			ShardedSize:                     previousRecommendation.ShardedSize,
 			EstimatedTimeInMinForImport:     previousRecommendation.EstimatedTimeInMinForImport,
@@ -546,7 +542,6 @@ func checkShardedTableLimit(sourceIndexMetadata []SourceDBMetadata, shardedLimit
 				NumNodes:                        previousRecommendation.NumNodes,
 				OptimalSelectConnectionsPerNode: previousRecommendation.OptimalSelectConnectionsPerNode,
 				OptimalInsertConnectionsPerNode: previousRecommendation.OptimalInsertConnectionsPerNode,
-				ParallelVoyagerJobs:             previousRecommendation.ParallelVoyagerJobs,
 				ColocatedSize:                   0,
 				ShardedSize:                     0,
 				EstimatedTimeInMinForImport:     previousRecommendation.EstimatedTimeInMinForImport,
@@ -629,7 +624,6 @@ func shardingBasedOnOperations(sourceIndexMetadata []SourceDBMetadata,
 			NumNodes:                        previousRecommendation.NumNodes,
 			OptimalSelectConnectionsPerNode: colocatedThroughput.selectConnPerNode.Int64,
 			OptimalInsertConnectionsPerNode: colocatedThroughput.insertConnPerNode.Int64,
-			ParallelVoyagerJobs:             previousRecommendation.ParallelVoyagerJobs,
 			ColocatedSize:                   cumulativeColocatedSizeSum,
 			ShardedSize:                     cumulativeSizeSharded,
 			EstimatedTimeInMinForImport:     previousRecommendation.EstimatedTimeInMinForImport,
@@ -709,7 +703,6 @@ func shardingBasedOnTableSizeAndCount(sourceTableMetadata []SourceDBMetadata,
 			NumNodes:                        previousRecommendation.NumNodes,
 			OptimalSelectConnectionsPerNode: previousRecommendation.OptimalSelectConnectionsPerNode,
 			OptimalInsertConnectionsPerNode: previousRecommendation.OptimalInsertConnectionsPerNode,
-			ParallelVoyagerJobs:             previousRecommendation.ParallelVoyagerJobs,
 			ColocatedSize:                   cumulativeColocatedSizeSum,
 			ShardedSize:                     cumulativeSizeSharded,
 			EstimatedTimeInMinForImport:     previousRecommendation.EstimatedTimeInMinForImport,
@@ -888,7 +881,7 @@ func createSizingRecommendationStructure(colocatedLimits []ExpDataColocatedLimit
 }
 
 /*
-calculateTimeTakenAndParallelJobsForImport estimates the time taken for import of tables.
+calculateTimeTakenForImport estimates the time taken for import of tables.
 It queries experimental data to find import time estimates for similar object sizes and configurations. For every table
 , it tries to find out how much time it would table for importing that table. The function adjusts the
 import time on that table by multiplying it by factor based on the indexes. The import time is also converted to
@@ -904,13 +897,12 @@ Parameters:
 Returns:
 
 	float64: The estimated time taken for import in minutes.
-	int64: Total parallel jobs used for import.
 	error: Error if any
 */
-func calculateTimeTakenAndParallelJobsForImport(tables []SourceDBMetadata,
+func calculateTimeTakenForImport(tables []SourceDBMetadata,
 	sourceIndexMetadata []SourceDBMetadata, loadTimes []ExpDataLoadTime,
 	indexImpactData []ExpDataLoadTimeIndexImpact, numColumnImpactData []ExpDataLoadTimeColumnsImpact,
-	objectType string) (float64, int64, error) {
+	objectType string) (float64, error) {
 	var importTime float64
 
 	// we need to calculate the time taken for import for every table.
@@ -933,7 +925,7 @@ func calculateTimeTakenAndParallelJobsForImport(tables []SourceDBMetadata,
 		importTime += (loadTimeMultiplicationFactorWrtIndexes * loadTimeMultiplicationFactorWrtNumColumns * tableImportTimeSec) / 60
 	}
 
-	return math.Ceil(importTime), loadTimes[0].parallelThreads.Int64, nil
+	return math.Ceil(importTime), nil
 }
 
 /*
@@ -952,8 +944,7 @@ Returns:
 func getExpDataLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore int, tableType string) ([]ExpDataLoadTime, error) {
 	selectQuery := fmt.Sprintf(`
 		SELECT csv_size_gb, 
-			   migration_time_secs, 
-			   parallel_threads,
+			   migration_time_secs,
 			   row_count
 		FROM %v 
 		WHERE num_cores = ? 
@@ -974,7 +965,7 @@ func getExpDataLoadTime(experimentDB *sql.DB, vCPUPerInstance int, memPerCore in
 	var loadTimes []ExpDataLoadTime
 	for rows.Next() {
 		var loadTime ExpDataLoadTime
-		if err = rows.Scan(&loadTime.csvSizeGB, &loadTime.migrationTimeSecs, &loadTime.parallelThreads, &loadTime.rowCount); err != nil {
+		if err = rows.Scan(&loadTime.csvSizeGB, &loadTime.migrationTimeSecs, &loadTime.rowCount); err != nil {
 			return nil, fmt.Errorf("cannot fetch data from experiment data table with query [%s]: %w",
 				selectQuery, err)
 		}

@@ -898,10 +898,10 @@ func TestPickBestRecommendation_PickLastMaxCoreRecommendationWhenNoneCanSupport(
 }
 
 /*
-===== 	Test functions to test calculateTimeTakenAndParallelJobsForImport function	=====
+===== 	Test functions to test calculateTimeTakenForImport function	=====
 */
 // validate the formula to calculate the import time for colocated table without index
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -915,11 +915,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000},
+			rowCount: sql.NullFloat64{Float64: 100000},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000},
+			rowCount: sql.NullFloat64{Float64: 100000},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact
@@ -932,7 +932,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -941,16 +941,14 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// Define expected results
 	// Calculated as table0: 1 * ((1134 * 23) / 19) / 60
 	expectedTime := 23.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table with one index
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithOneIndex_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithOneIndex_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -965,11 +963,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1461},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 2009},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 
@@ -988,7 +986,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -997,16 +995,14 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 	// Define expected results
 	// Calculated as table0: 1.77777 * ((1461 * 23) / 19) / 60
 	expectedTime := 53.0 // double the time required when there are no indexes.
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table with 5 indexes
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithFiveIndexes_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithFiveIndexes_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -1024,11 +1020,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1461},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 2009},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	//TODO: modify index impact with actual colocated data when it is available and adjust the calculations
@@ -1044,7 +1040,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 		},
 	}
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnsImpact, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1053,16 +1049,14 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 	// Define expected results
 	// Calculated as table0: 4.66666 * ((1461 * 23) / 19) / 60
 	expectedTime := 138.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for sharded table without index
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex_Sharded(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex_Sharded(t *testing.T) {
 	// Define test data
 	shardedTables := []SourceDBMetadata{
 		{
@@ -1074,11 +1068,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	shardedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact
@@ -1090,7 +1084,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 		},
 	}
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata,
+	estimatedTime, err := calculateTimeTakenForImport(shardedTables, sourceIndexMetadata,
 		shardedLoadTimes, indexImpacts, columnsImpact, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1099,16 +1093,14 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// Define expected results
 	// Calculated as table0: 1 * ((1134 * 23) / 19) / 60
 	expectedTime := 23.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for sharded table with one index
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithOneIndex_Sharded(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithOneIndex_Sharded(t *testing.T) {
 	// Define test data
 	shardedTables := []SourceDBMetadata{
 		{
@@ -1122,11 +1114,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 	shardedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	indexImpacts := []ExpDataLoadTimeIndexImpact{
@@ -1140,8 +1132,8 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 		},
 	}
 	// Call the function
-	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
+	estimatedTime, err :=
+		calculateTimeTakenForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
 			indexImpacts, columnsImpact, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1150,16 +1142,15 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithO
 	// Define expected results
 	// Calculated as table0: 1.76 * ((1134 * 23) / 19) / 60
 	expectedTime := 41.0 // double the time required when there are no indexes.
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for sharded table with 5 indexes
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithFiveIndexes_Sharded(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithFiveIndexes_Sharded(t *testing.T) {
 	// Define test data
 	shardedTables := []SourceDBMetadata{
 		{
@@ -1177,11 +1168,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 	shardedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 
@@ -1197,8 +1188,8 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 		},
 	}
 	// Call the function
-	estimatedTime, parallelJobs, err :=
-		calculateTimeTakenAndParallelJobsForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
+	estimatedTime, err :=
+		calculateTimeTakenForImport(shardedTables, sourceIndexMetadata, shardedLoadTimes,
 			indexImpacts, columnsImpact, SHARDED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1207,16 +1198,15 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithF
 	// Define expected results
 	// Calculated as table0: 4.6 * ((1134 * 23) / 19) / 60
 	expectedTime := 106.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table without index having 5 columns
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex5Columns_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex5Columns_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -1228,11 +1218,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact // doesn't have any impact as there are no indexes
@@ -1245,7 +1235,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1254,16 +1244,15 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// Define expected results
 	// Calculated as table0: 1 * ((1134 * 23) / 19) / 60
 	expectedTime := 23.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table without index having 40 columns
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex40Columns_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex40Columns_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -1275,11 +1264,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact // doesn't have any impact as there are no indexes
@@ -1297,7 +1286,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1306,16 +1295,15 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// Define expected results
 	// Calculated as table0: 1.57 * ((1134 * 23) / 19) / 60
 	expectedTime := 36.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table without index having 100 columns
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex100Columns_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex100Columns_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -1327,11 +1315,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact // doesn't have any impact as there are no indexes
@@ -1349,7 +1337,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1359,16 +1347,15 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// multiplication factor: high MF of 160 columns ==> 4.13
 	// Calculated as table0: 4.13 * ((1134 * 23) / 19) / 60
 	expectedTime := 95.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }
 
 // validate the formula to calculate the import time for colocated table without index having 250 columns
-func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWithoutIndex250Columns_Colocated(t *testing.T) {
+func TestCalculateTimeTakenForImport_ValidateImportTimeTableWithoutIndex250Columns_Colocated(t *testing.T) {
 	// Define test data
 	colocatedTables := []SourceDBMetadata{
 		{
@@ -1380,11 +1367,11 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	colocatedLoadTimes := []ExpDataLoadTime{
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 19}, migrationTimeSecs: sql.NullFloat64{Float64: 1134},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 		{
 			csvSizeGB: sql.NullFloat64{Float64: 29}, migrationTimeSecs: sql.NullFloat64{Float64: 1657},
-			parallelThreads: sql.NullInt64{Int64: 1}, rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
+			rowCount: sql.NullFloat64{Float64: 100000, Valid: true},
 		},
 	}
 	var indexImpacts []ExpDataLoadTimeIndexImpact // doesn't have any impact as there are no indexes
@@ -1402,7 +1389,7 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	}
 
 	// Call the function
-	estimatedTime, parallelJobs, err := calculateTimeTakenAndParallelJobsForImport(colocatedTables,
+	estimatedTime, err := calculateTimeTakenForImport(colocatedTables,
 		sourceIndexMetadata, colocatedLoadTimes, indexImpacts, columnImpacts, COLOCATED)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1412,10 +1399,9 @@ func TestCalculateTimeTakenAndParallelJobsForImport_ValidateImportTimeTableWitho
 	// multiplication factor: closest MF of 160 columns ==> (4.13/160 : x/250) ==> x = 6.45
 	// Calculated as table0: 6.45 * ((1134 * 23) / 19) / 60
 	expectedTime := 148.0
-	expectedJobs := int64(1)
-	if estimatedTime != expectedTime || parallelJobs != expectedJobs {
-		t.Errorf("calculateTimeTakenAndParallelJobsForImport() = (%v, %v), want (%v, %v)",
-			estimatedTime, parallelJobs, expectedTime, expectedJobs)
+
+	if estimatedTime != expectedTime {
+		t.Errorf("calculateTimeTakenForImport() = (%v), want (%v)", estimatedTime, expectedTime)
 	}
 
 }

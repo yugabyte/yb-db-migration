@@ -36,7 +36,6 @@ type SizingRecommendation struct {
 	OptimalSelectConnectionsPerNode int64
 	OptimalInsertConnectionsPerNode int64
 	EstimatedTimeInMinForImport     float64
-	ParallelVoyagerJobs             float64
 }
 
 type SizingAssessmentReport struct {

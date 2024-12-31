@@ -369,8 +369,7 @@
 			"MemoryPerInstance": 32,
 			"OptimalSelectConnectionsPerNode": 16,
 			"OptimalInsertConnectionsPerNode": 24,
-			"EstimatedTimeInMinForImport": 0,
-			"ParallelVoyagerJobs": 3
+			"EstimatedTimeInMinForImport": 0
 		},
 		"FailureReasoning": ""
 	},

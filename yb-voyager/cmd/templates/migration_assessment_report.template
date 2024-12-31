@@ -156,7 +156,6 @@
                             <tr><td>Memory per instance(GiB)</td><td>{{ .MemoryPerInstance }}</td></tr>
                             <tr><td>Optimal select connections per node</td><td>{{ if eq .OptimalSelectConnectionsPerNode 0 }}--{{else}}{{.OptimalSelectConnectionsPerNode }}{{end}}</td></tr>
                             <tr><td>Optimal insert connections per node</td><td>{{ if eq .OptimalInsertConnectionsPerNode 0 }}--{{else}}{{.OptimalInsertConnectionsPerNode}}{{end}}</td></tr>
-                            <tr><td>Parallel Voyager Jobs</td><td>{{ .ParallelVoyagerJobs }}</td></tr>
                             <tr><td>Estimated time taken for data import </td><td>{{ .EstimatedTimeInMinForImport }} min</td></tr>
                         </table>
                     <h3>Reasoning: </h3>

@@ -241,7 +241,6 @@
 			"OptimalSelectConnectionsPerNode": 8,
 			"OptimalInsertConnectionsPerNode": 12,
 			"EstimatedTimeInMinForImport": 0,
-			"ParallelVoyagerJobs": 1
 		},
 		"FailureReasoning": ""
 	},
