@@ -5,6 +5,7 @@ SELECT
     CASE 
         WHEN c.relkind = 'r' THEN 'table' 
         WHEN c.relkind = 'p' THEN 'partitioned table'
+        WHEN (c.relkind = 'i' AND pi.indisprimary) THEN 'primary key'
         WHEN c.relkind = 'i' THEN 'index'
         WHEN c.relkind = 'I' THEN 'partitioned index'
         WHEN c.relkind = 'm' THEN 'materialized view'
@@ -13,9 +14,7 @@ SELECT
     CASE
         WHEN c.relkind IN ('r', 'p', 'm') THEN
             (SELECT COUNT(*) FROM pg_attribute WHERE attrelid = c.oid AND attnum > 0 AND NOT attisdropped)
-        WHEN c.relkind IN ('i', 'I') AND NOT EXISTS (
-            SELECT 1 FROM pg_index WHERE indexrelid = c.oid AND indisprimary
-        ) THEN
+        WHEN c.relkind IN ('i', 'I') THEN
             (SELECT COUNT(*) FROM pg_attribute WHERE attrelid = c.oid AND attnum > 0 AND NOT attisdropped)
     END AS column_count
 FROM
@@ -25,7 +24,7 @@ JOIN
 LEFT JOIN
     pg_index pi ON pi.indexrelid = c.oid
 WHERE
-    (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind IN ('i', 'I') AND pi.indisprimary)
+    (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind ='I' AND pi.indisprimary)
     AND n.nspname = ANY(ARRAY[string_to_array(:'schema_list', '|')]);
 
 \copy temp_table to 'table-columns-count.csv' WITH CSV HEADER;

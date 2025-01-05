@@ -6,6 +6,7 @@ SELECT
     CASE 
         WHEN c.relkind = 'r' THEN 'table' 
         WHEN c.relkind = 'p' THEN 'partitioned table'
+        WHEN (c.relkind = 'i' AND pi.indisprimary) THEN 'primary key'
         WHEN c.relkind = 'i' THEN 'index'
         WHEN c.relkind = 'I' THEN 'partitioned index'
         WHEN c.relkind = 'm' THEN 'materialized view'
@@ -19,7 +20,7 @@ JOIN
 LEFT JOIN
     pg_catalog.pg_index pi ON pi.indexrelid = c.oid AND (c.relkind = 'i' OR c.relkind = 'I')
 WHERE 
-    (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind IN ('i', 'I') AND pi.indisprimary)
+    (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind='I' AND pi.indisprimary)
     AND n.nspname = ANY(ARRAY[string_to_array(:'schema_list', '|')]);
 
 -- TODO: handle storing the info(column names) with schema name(required in case of multi schema migration)

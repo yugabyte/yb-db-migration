@@ -5,6 +5,7 @@ SELECT
     CASE 
         WHEN c.relkind = 'r' THEN 'table' 
         WHEN c.relkind = 'p' THEN 'partitioned table'
+        WHEN (c.relkind = 'i' AND pi.indisprimary) THEN 'primary key'
         WHEN c.relkind = 'i' THEN 'index'
         WHEN c.relkind = 'I' THEN 'partitioned index'
         WHEN c.relkind = 'm' THEN 'materialized view'
@@ -31,7 +32,7 @@ LEFT JOIN
     pg_index pi ON pi.indexrelid = c.oid
 WHERE
     n.nspname = ANY(ARRAY[string_to_array(:'schema_list', '|')])
-    AND (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind IN ('i', 'I') AND pi.indisprimary);
+    AND (c.relkind IN ('r', 'p', 'i', 'I', 'm')) AND NOT (c.relkind='I' AND pi.indisprimary);
 
 -- Now you can use the temporary table to fetch the data
 \copy temp_table TO 'table-index-iops.csv' WITH CSV HEADER;
