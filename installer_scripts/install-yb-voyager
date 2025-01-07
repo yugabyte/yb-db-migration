@@ -154,11 +154,18 @@ centos_main() {
 		$YUM_INSTALL perl-ExtUtils-MakeMaker 1>&2
 		centos_install_oracle_instant_clients
 		update_yb_voyager_bashrc
+		# Removing gcc for testing
+		sudo dnf remove -y gcc 1>&2
+		$YUM_INSTALL https://s3.us-west-2.amazonaws.com/downloads.yugabyte.com/repos/reporpms/yb-yum-repo-1.1-0.noarch.rpm 1>&2
+		output "Install perl DBD oracle driver."
+		$YUM_INSTALL perl-DBD-Oracle perl-DBD-mysql
 		install_ora2pg
 		create_base_ora2pg_conf_file
 	fi
 	install_debezium_server
+	$YUM_INSTALL gcc 1>&2
 	install_yb_voyager
+	sudo dnf remove -y gcc 1>&2
 	create_yb_session_vars_file
 	update_bashrc
 
@@ -200,11 +207,19 @@ ubuntu_main() {
 		sudo apt-get -y install libmysqlclient-dev 1>&2
 		ubuntu_install_oracle_instant_clients
 		update_yb_voyager_bashrc
+		# Removing gcc for testing
+		sudo apt-get remove -y gcc 1>&2
+		output "Install perl DBD oracle driver."
+		wget https://s3.us-west-2.amazonaws.com/downloads.yugabyte.com/repos/reporpms/yb-apt-repo_1.0.0_all.deb 1>&2
+		sudo apt-get install -y ./yb-apt-repo_1.0.0_all.deb 1>&2
+		sudo apt-get install -y libdbd-oracle-perl libdbd-mysql-perl 1>&2 
 		install_ora2pg
 		create_base_ora2pg_conf_file
 	fi
 	install_debezium_server
+	sudo apt-get install -y gcc 1>&2
 	install_yb_voyager
+	sudo apt-get remove -y gcc 1>&2
 	create_yb_session_vars_file
 	update_bashrc
 
@@ -766,7 +781,7 @@ install_ora2pg() {
 	ora2pg_license_acknowledgement
 
 	output "Installing perl DB drivers required for ora2pg."
-	sudo cpanm DBD::mysql@5.005 Test::NoWarnings@1.06 DBD::Oracle@1.83 1>&2
+	sudo cpanm Test::NoWarnings@1.06 1>&2
 
 	output "Installing ora2pg."
 	wget -nv https://github.com/darold/ora2pg/archive/${ORA2PG_VERSION}.tar.gz 1>&2
