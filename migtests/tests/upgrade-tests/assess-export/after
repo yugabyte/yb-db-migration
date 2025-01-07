@@ -1,0 +1,39 @@
+	step "Export schema."
+	export_schema
+	find ${EXPORT_DIR}/schema -name '*.sql' -printf "'%p'\n"| xargs grep -wh CREATE
+
+	step "Analyze schema."
+	analyze_schema
+	tail -20 ${EXPORT_DIR}/reports/schema_analysis_report.json
+
+	step "Fix schema."
+	if [ -x "${TEST_DIR}/fix-schema" ]
+	then
+		 "${TEST_DIR}/fix-schema"
+	fi
+
+	if [ "${MOVE_PK_FROM_ALTER_TO_CREATE}" = true ] ; then
+		"${SCRIPTS}/add-pk-from-alter-to-create"
+	fi
+
+	step "Import schema."
+	import_schema --continue-on-error true
+	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	if [ -f "${EXPORT_DIR}/schema/failed.sql" ]; then
+	    if [ -f "${TEST_DIR}/expected_files/expected_failed.sql" ]; then
+	        # Both files exist, proceed with comparison
+	        compare_sql_files "${EXPORT_DIR}/schema/failed.sql" "${TEST_DIR}/expected_files/expected_failed.sql"
+	    else
+	        # expected_failed.sql does not exist, error out
+	        echo "Error: unexpected failed.sql found."
+	        cat "${EXPORT_DIR}/schema/failed.sql"
+	        exit 1
+	    fi
+	fi
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi

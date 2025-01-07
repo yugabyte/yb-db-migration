@@ -1,0 +1,34 @@
+	step "Export schema."
+	export_schema
+
+	step "Export data."
+	# false if exit code of export_data is non-zero
+	export_data || { 
+		cat_log_file "yb-voyager-export-data.log"
+		cat_log_file "debezium-source_db_exporter.log"
+		exit 1
+	}
+
+	cat ${EXPORT_DIR}/data/export_status.json || echo "No export_status.json found."
+	cat ${EXPORT_DIR}/metainfo/dataFileDescriptor.json
+	
+	step "Import schema."
+	import_schema
+	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Import data."
+	import_data
+	
+	step "Import remaining schema (FK, index, and trigger) and Refreshing MViews if present."
+	import_schema --post-snapshot-import true --refresh-mviews=true
+	run_ysql ${TARGET_DB_NAME} "\di"
+	run_ysql ${TARGET_DB_NAME} "\dft" 
+
+	step "Run import-data-status"
+	import_data_status
+
+	expected_file="${TEST_DIR}/import_data_status-report.json"
+	actual_file="${EXPORT_DIR}/reports/import-data-status-report.json"
+
+	step "Verify import-data-status report"
+	verify_report ${expected_file} ${actual_file}

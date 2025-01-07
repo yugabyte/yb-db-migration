@@ -1,0 +1,34 @@
+	step "Assess Migration"
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" == "oracle" ]; then
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
+	post_assess_migration
+	fi
+
+	step "Export schema."
+	export_schema
+
+	step "Analyze schema."
+	analyze_schema
+
+	step "Fix schema."
+	if [ -x "${TEST_DIR}/fix-schema" ]
+	then
+		 "${TEST_DIR}/fix-schema"
+	fi
+
+	if [ "${MOVE_PK_FROM_ALTER_TO_CREATE}" = true ] ; then
+		"${SCRIPTS}/add-pk-from-alter-to-create"
+	fi
+
+	step "Import schema."
+	import_schema
+	run_ysql ${TARGET_DB_NAME} "\dt"
+
+	step "Run Schema validations."
+	if [ -x "${TEST_DIR}/validate-schema" ]
+	then
+		 "${TEST_DIR}/validate-schema"
+	fi

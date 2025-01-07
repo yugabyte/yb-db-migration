@@ -1,0 +1,19 @@
+	step "Assess Migration"
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" == "oracle" ]; then
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
+
+		step "Validate Assessment Reports"
+		# Checking if the assessment reports were created
+		if [ -f "${EXPORT_DIR}/assessment/reports/migration_assessment_report.html" ] && [ -f "${EXPORT_DIR}/assessment/reports/migration_assessment_report.json" ]; then
+			echo "Assessment reports created successfully."
+			validate_failure_reasoning "${EXPORT_DIR}/assessment/reports/migration_assessment_report.json"
+			#TODO: Further validation to be added
+		else
+			echo "Error: Assessment reports were not created successfully."
+			cat_log_file "yb-voyager-assess-migration.log"
+			exit 1
+		fi
+	fi

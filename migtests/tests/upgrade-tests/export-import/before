@@ -1,0 +1,49 @@
+    step "Assess Migration"
+	if [ "${SOURCE_DB_TYPE}" = "postgresql" ] || [ "${SOURCE_DB_TYPE}" == "oracle" ]; then
+		assess_migration || {
+			cat_log_file "yb-voyager-assess-migration.log"
+			cat_file ${EXPORT_DIR}/assessment/metadata/yb-voyager-assessment.log
+		}
+	post_assess_migration
+	fi
+
+	step "Export schema."
+	export_schema
+
+	step "Analyze schema."
+	analyze_schema
+
+	step "Fix schema."
+	if [ -x "${TEST_DIR}/fix-schema" ]
+	then
+		 "${TEST_DIR}/fix-schema"
+	fi
+
+	if [ "${MOVE_PK_FROM_ALTER_TO_CREATE}" = true ] ; then
+		"${SCRIPTS}/add-pk-from-alter-to-create"
+	fi
+
+	step "Export data."
+	# false if exit code of export_data is non-zero
+	export_data || { 
+		cat_log_file "yb-voyager-export-data.log"
+		cat_log_file "debezium-source_db_exporter.log"
+		exit 1
+	}
+
+	cat ${EXPORT_DIR}/data/export_status.json || echo "No export_status.json found."
+	cat ${EXPORT_DIR}/metainfo/dataFileDescriptor.json
+
+	step "Run export-data-status"
+	export_data_status
+
+	expected_file="${TEST_DIR}/export_data_status-report.json"
+	actual_file="${EXPORT_DIR}/reports/export-data-status-report.json"
+
+	if [ "${EXPORT_TABLE_LIST}" != "" ]
+	then
+		expected_file="${TEST_DIR}/export-data-status-with-table-list-report.json"
+	fi
+
+	step "Verify export-data-status report"
+	verify_report ${expected_file} ${actual_file}

@@ -136,6 +136,8 @@ def migration_completed_checks(tgt):
 	print(f"count returned - {cnt_type_domain}")
 	assert cnt_type_domain == 6
 
+	yb.verify_colocation(tgt, "postgresql")
+
 
 if __name__ == "__main__":
 	main()

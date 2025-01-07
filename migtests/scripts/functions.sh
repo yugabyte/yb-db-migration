@@ -917,9 +917,16 @@ compare_sql_files() {
 
     # Compare the normalized files
     compare_files "$normalized_file1" "$normalized_file2"
-    
-    # Clean up temporary files
+
+    compare_status=$?
+
+	# Clean up temporary files
     rm "$normalized_file1" "$normalized_file2"
+
+    # Exit with the status from compare_files if there are differences
+    if [ $compare_status -ne 0 ]; then
+        exit $compare_status
+    fi
 }
 
 
@@ -1043,4 +1050,63 @@ cutover_to_target() {
     fi
     
     yb-voyager initiate cutover to target ${args} $*
+}
+
+resolve_and_install_dependencies() {
+    local error_output="$1"
+
+    # Check if there are unmet dependencies
+    if echo "$error_output" | grep -q "The following packages have unmet dependencies:"; then
+        echo "Unmet dependencies found, resolving..."
+
+        # Extract dependencies, capturing package name and exact version
+        dependencies=$(echo "$error_output" | grep -oP 'Depends: \K[^\s]+ \(=[^\)]+')
+
+        # Remove " (= " part and format the dependencies to package-name=version format
+        dependencies=$(echo "$dependencies" | sed 's/ (= /=/g')
+
+        # Loop through dependencies and install them
+        for dep in $dependencies; do
+            echo "Installing dependency: $dep"
+            sudo apt-get install -y --allow-downgrades "$dep"
+        done
+    else
+        echo "No unmet dependencies found."
+    fi
+}
+
+verify_voyager_version() {
+    local expected_version="$1"
+    local actual_version
+
+    actual_version=$(yb-voyager version 2>/dev/null | grep -m1 '^VERSION=' | cut -d'=' -f2)
+
+    # Handle the special case where expected_version is "local"
+    if [[ "$expected_version" == "local" && "$actual_version" == "main" ]]; then
+        echo "Success: yb-voyager version matches the expected condition (installation: local, version: main)."
+        return 0
+    fi
+
+    # General case for matching versions
+    if [[ "$actual_version" == "$expected_version" ]]; then
+        echo "Success: yb-voyager version matches the expected version ($expected_version)."
+        return 0
+    else
+        echo "Error: yb-voyager version mismatch. Expected: $expected_version, Got: ${actual_version:-'Unknown'}."
+        return 1
+    fi
+}
+
+run_script() {
+    local script_file=$1
+    if [ -f "${script_file}" ]; then
+        step "Running script: ${script_file}"
+        source "${script_file}"
+        if [ $? -ne 0 ]; then
+            echo "Error: Script ${script_file} returned an error. Exiting."
+            return 1
+        fi
+    else
+        echo "Script ${script_file} not found, skipping."
+    fi
 }
