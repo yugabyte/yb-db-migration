@@ -220,3 +220,17 @@ var fetchWithTiesIssue = issue.Issue{
 func NewFetchWithTiesIssue(objectType string, objectName string, sqlStatement string) QueryIssue {
 	return newQueryIssue(fetchWithTiesIssue, objectType, objectName, sqlStatement, map[string]interface{}{})
 }
+
+var cteWithMaterializedIssue = issue.Issue{
+	Type: CTE_WITH_MATERIALIZED_CLAUSE,
+	Name: "Modifying Materialization of Common table expressions not supported",
+	Impact: constants.IMPACT_LEVEL_2,
+	Description: "",
+	Suggestion: "No workaround available right now",
+	GH: "",
+	DocsLink: "", 
+}
+
+func NewCTEWithMaterializedIssue(objectType string, objectName string, sqlStatement string) QueryIssue {
+	return newQueryIssue(cteWithMaterializedIssue, objectType, objectName, sqlStatement, map[string]interface{}{})
+}

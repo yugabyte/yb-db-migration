@@ -230,6 +230,34 @@ FROM events;`,
 	}
 }
 
+func testCTEWithMaterializedIssue(t *testing.T) {
+	sqls := map[string]string{`WITH w AS NOT MATERIALIZED (
+		SELECT * FROM big_table
+	)
+	SELECT * FROM w AS w1 JOIN w AS w2 ON w1.key = w2.ref
+	WHERE w2.key = 123;`: `syntax error at or near "NOT"`,
+		`WITH moved_rows AS MATERIALIZED (
+		DELETE FROM products
+		WHERE
+			"date" >= '2010-10-01' AND
+			"date" < '2010-11-01'
+		RETURNING *
+	)
+	INSERT INTO products_log
+	SELECT * FROM moved_rows;`: `syntax error at or near "MATERIALIZED"`
+	}
+	for sql, errMsg := range sqls {
+		ctx := context.Background()
+		conn, err := getConn()
+		assert.NoError(t, err)
+
+		defer conn.Close(context.Background())
+		_, err = conn.Exec(ctx, sql)
+
+		assertErrorCorrectlyThrownForIssueForYBVersion(t, err, errMsg, cteWithMaterializedIssue)
+	}
+}
+
 func TestDMLIssuesInYBVersion(t *testing.T) {
 	var err error
 	ybVersion := os.Getenv("YB_VERSION")
@@ -281,6 +309,9 @@ func TestDMLIssuesInYBVersion(t *testing.T) {
 	assert.True(t, success)
 
 	success = t.Run(fmt.Sprintf("%s-%s", "json type predicate", ybVersion), testJsonPredicateIssue)
+	assert.True(t, success)
+
+	success = t.Run(fmt.Sprintf("%s-%s", "cte with materialized cluase", ybVersion), testCTEWithMaterializedIssue)
 	assert.True(t, success)
 
 }

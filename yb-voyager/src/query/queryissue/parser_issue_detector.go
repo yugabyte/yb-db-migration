@@ -395,6 +395,7 @@ func (p *ParserIssueDetector) genericIssues(query string) ([]QueryIssue, error) 
 		NewJsonQueryFunctionDetector(query),
 		NewJsonbSubscriptingDetector(query, p.jsonbColumns, p.getJsonbReturnTypeFunctions()),
 		NewJsonPredicateExprDetector(query),
+		NewCommonTableExpressionDetector(query),
 	}
 
 	processor := func(msg protoreflect.Message) error {

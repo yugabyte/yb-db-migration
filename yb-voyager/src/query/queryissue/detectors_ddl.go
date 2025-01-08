@@ -603,6 +603,25 @@ func (v *ViewIssueDetector) DetectIssues(obj queryparser.DDLObject) ([]QueryIssu
 	return issues, nil
 }
 
+// ================FUNCTION ISSUE DETECTOR ==================
+
+type FunctionIssueDetector struct{}
+
+func (v *FunctionIssueDetector) DetectIssues(obj queryparser.DDLObject) ([]QueryIssue, error) {
+	function, ok := obj.(*queryparser.Function)
+	if !ok {
+		return nil, fmt.Errorf("invalid object type: expected View")
+	}
+	var issues []QueryIssue
+
+	if function.HasSqlBody {
+		//https://www.postgresql.org/docs/15/sql-createfunction.html#:~:text=a%20new%20session.-,sql_body,-The%20body%20of
+		issues = append(issues, NewSqlBodyInFunctionIssue(function.GetObjectType(), function.GetObjectName(), ""))
+	}
+
+	return issues, nil
+}
+
 // ==============MVIEW ISSUE DETECTOR ======================
 
 type MViewIssueDetector struct{}
@@ -646,6 +665,8 @@ func (p *ParserIssueDetector) GetDDLDetector(obj queryparser.DDLObject) (DDLIssu
 		return &ViewIssueDetector{}, nil
 	case *queryparser.MView:
 		return &MViewIssueDetector{}, nil
+	case *queryparser.Function:
+		return &FunctionIssueDetector{}, nil
 	default:
 		return &NoOpIssueDetector{}, nil
 	}

@@ -515,3 +515,16 @@ func NewForeignKeyReferencesPartitionedTableIssue(objectType string, objectName 
 	}
 	return newQueryIssue(foreignKeyReferencesPartitionedTableIssue, objectType, objectName, SqlStatement, details)
 }
+
+var sqlBodyInFunctionIssue = issue.Issue{
+	Type: SQL_BODY_IN_FUNCTION,
+	Name: SQL_BODY_IN_FUNCTION_NAME,
+	Impact: constants.IMPACT_LEVEL_1,
+	Suggestion: "No workaround available",
+	GH: "",
+	DocsLink: "",
+}
+
+func NewSqlBodyInFunctionIssue(objectType string, objectName string, SqlStatement string) QueryIssue {
+	return newQueryIssue(sqlBodyInFunctionIssue, objectType, objectName, SqlStatement, map[string]interface{}{})
+}

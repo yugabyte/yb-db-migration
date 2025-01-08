@@ -25,14 +25,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-const (
-	DOCS_LINK_PREFIX        = "https://docs.yugabyte.com/preview/yugabyte-voyager/known-issues/"
-	POSTGRESQL_PREFIX       = "postgresql/"
-	ADVISORY_LOCKS_DOC_LINK = DOCS_LINK_PREFIX + POSTGRESQL_PREFIX + "#advisory-locks-is-not-yet-implemented"
-	SYSTEM_COLUMNS_DOC_LINK = DOCS_LINK_PREFIX + POSTGRESQL_PREFIX + "#system-columns-is-not-yet-supported"
-	XML_FUNCTIONS_DOC_LINK  = DOCS_LINK_PREFIX + POSTGRESQL_PREFIX + "#xml-functions-is-not-yet-supported"
-)
-
 func GetProtoMessageFromParseTree(parseTree *pg_query.ParseResult) protoreflect.Message {
 	return parseTree.Stmts[0].Stmt.ProtoReflect()
 
@@ -418,6 +410,18 @@ func ProtoAsSelectStmt(msg protoreflect.Message) (*pg_query.SelectStmt, error) {
 		return nil, fmt.Errorf("failed to cast msg to %s", PG_QUERY_SELECTSTMT_NODE)
 	}
 	return selectStmtNode, nil
+}
+
+func ProtoAsCTENode(msg protoreflect.Message) (*pg_query.CommonTableExpr, error) {
+	protoMsg, ok := msg.Interface().(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast msg to proto.Message")
+	}
+	cteNode, ok := protoMsg.(*pg_query.CommonTableExpr)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast msg to %s", PG_QUERY_SELECTSTMT_NODE)
+	}
+	return cteNode, nil
 }
 
 /*

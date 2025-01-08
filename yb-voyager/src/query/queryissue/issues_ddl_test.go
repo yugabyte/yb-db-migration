@@ -287,6 +287,31 @@ func testForeignKeyReferencesPartitionedTableIssue(t *testing.T) {
 	assertErrorCorrectlyThrownForIssueForYBVersion(t, err, `cannot reference partitioned table "abc1"`, foreignKeyReferencesPartitionedTableIssue)
 }
 
+func testSQLBodyInFunctionIssue(t *testing.T) {
+	sqls := map[string]string{
+		`CREATE OR REPLACE FUNCTION asterisks(n int)
+  RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+RETURN repeat('*', n);`: `syntax error at or near "RETURN"`,
+		`CREATE OR REPLACE FUNCTION asterisks(n int)
+  RETURNS SETOF text
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+BEGIN ATOMIC
+SELECT repeat('*', g) FROM generate_series (1, n) g;
+END;`: `syntax error at or near "BEGIN"`
+	}
+	for sql, errMsg := range sqls {
+		ctx := context.Background()
+		conn, err := getConn()
+		assert.NoError(t, err)
+
+		defer conn.Close(context.Background())
+		_, err = conn.Exec(ctx, sql)
+
+		assertErrorCorrectlyThrownForIssueForYBVersion(t, err, errMsg, sqlBodyInFunctionIssue)
+	}
+}
+
 func TestDDLIssuesInYBVersion(t *testing.T) {
 	var err error
 	ybVersion := os.Getenv("YB_VERSION")
@@ -347,5 +372,8 @@ func TestDDLIssuesInYBVersion(t *testing.T) {
 	assert.True(t, success)
 
 	success = t.Run(fmt.Sprintf("%s-%s", "foreign key referenced partitioned table", ybVersion), testForeignKeyReferencesPartitionedTableIssue)
+	assert.True(t, success)
+
+	success = t.Run(fmt.Sprintf("%s-%s", "sql body in function", ybVersion), testSQLBodyInFunctionIssue)
 	assert.True(t, success)
 }
