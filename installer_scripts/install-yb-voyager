@@ -185,7 +185,7 @@ ubuntu_main() {
 	fi
 
 	output "Installing packages."
-	sudo apt-get -y install wget  1>&2
+	sudo apt-get -y install wget make gcc 1>&2
 	sudo apt-get -y install sqlite3 1>&2
 	install_golang linux
 	ubuntu_install_postgres
@@ -318,7 +318,7 @@ check_java() {
 	then
         output "Found sufficient java version = ${JAVA_COMPLETE_VERSION}"
     else
-        output "ERROR: Java not found or insuffiencient version ${JAVA_COMPLETE_VERSION}. Please install java>=${MIN_REQUIRED_MAJOR_VERSION}"
+        echo -e "\e[31mERROR: Java not found or insufficient version ${JAVA_COMPLETE_VERSION}. Please install java>=${MIN_REQUIRED_MAJOR_VERSION}\e[0m"
         exit 1;
     fi
 }
