@@ -1,0 +1,57 @@
+# Additional Flags
+# Uncomment the below to add any additional flags to the command
+
+# additional_flags:
+#   --delimiter: "\\t"
+
+# Import Type
+import_type: offline
+
+# Row Count Validation
+row_count:
+  Case_Sensitive_Table: 5000000
+  case: 5000000
+  Table: 5000000
+  schema2.Case_Sensitive_Table: 5000000
+  schema2.case: 5000000
+  schema2.Table: 5000000
+  public.boston: 2500000
+  public.cust_active: 5625000
+  public.cust_arr_small: 3750000
+  public.cust_arr_large: 1875000
+  public.cust_other: 1875000
+  public.cust_part11: 1873299
+  public.cust_part12: 1876701
+  public.cust_part21: 937509
+  public.cust_part22: 937491
+  public.customers: 7500000
+  public.emp: 7500000
+  public.emp_0: 2500997
+  public.emp_1: 2499183
+  public.emp_2: 2499820
+  public.london: 2500000
+  public.sales: 7500000
+  public.sales_2019_q4: 2500000
+  public.sales_2020_q1: 2500000
+  public.sales_2020_q2: 2500000
+  public.sales_region: 7500000
+  public.sydney: 2500000
+  p1.sales_region: 7500000
+  p2.sydney: 2500000
+  p2.london: 2500000
+  p2.boston: 2500000
+  public.range_columns_partition_test: 6
+  public.range_columns_partition_test_p0: 3
+  public.range_columns_partition_test_p1: 3
+  public.test_partitions_sequences: 7500000
+  public.test_partitions_sequences_l: 2500000
+  public.test_partitions_sequences_s: 2500000
+  public.test_partitions_sequences_b: 2500000
+
+# Resumption Settings
+resumption:
+  max_restarts: 15
+  min_interrupt_seconds: 20
+  max_interrupt_seconds: 45
+  min_restart_wait_seconds: 15
+  max_restart_wait_seconds: 30

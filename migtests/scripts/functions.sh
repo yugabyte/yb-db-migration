@@ -389,7 +389,6 @@ import_data() {
 		--target-db-name ${TARGET_DB_NAME}
 		--disable-pb true
 		--send-diagnostics=false 
-		--truncate-splits true
 		--max-retries 1
 		"
 

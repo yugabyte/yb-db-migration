@@ -1,0 +1,21 @@
+# File Table Map
+file_table_map: "accounts_350m_data.sql:accounts_large"
+
+# Additional Flags
+# Uncomment the below to add any additional flags to the command
+
+additional_flags:
+  --delimiter: "\\t"
+  --format: "text"
+
+# Row Count Validation
+row_count:
+  accounts_large: 350000000
+
+# Resumption Settings
+resumption:
+  max_restarts: 30
+  min_interrupt_seconds: 300
+  max_interrupt_seconds: 720
+  min_restart_wait_seconds: 30
+  max_restart_wait_seconds: 60

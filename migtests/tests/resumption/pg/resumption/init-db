@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source "${SCRIPTS}/functions.sh"
+
+echo "Creating Source and Target databases."
+run_psql postgres "DROP DATABASE IF EXISTS ${SOURCE_DB_NAME};"
+run_psql postgres "CREATE DATABASE ${SOURCE_DB_NAME};"
+run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
+run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME} with COLOCATION=TRUE;"
+
+TEMP_SQL=$(mktemp "${TEST_DIR}/temp_sql.XXXXXX")
+
+if [ ! -f "$TEMP_SQL" ]; then
+  echo "Failed to create temporary file in ${TEST_DIR}"
+  exit 1
+fi
+
+# Writing temporary SQL script to create DB objects for the test
+cat <<EOF > "$TEMP_SQL"
+\i schema.sql;
+\i snapshot.sql;
+\i ${TESTS_DIR}/pg/partitions/schema.sql;
+
+CREATE SCHEMA IF NOT EXISTS schema2;
+SET SEARCH_PATH TO schema2;
+\i schema.sql;
+\i snapshot.sql;
+EOF
+
+# Run the temporary SQL script
+run_psql "${SOURCE_DB_NAME}" "\i ${TEMP_SQL}"
+
+# Clean up the temporary SQL script
+rm "$TEMP_SQL"
+
+chmod +x ${TESTS_DIR}/pg/partitions/snapshot.sh
+${TESTS_DIR}/pg/partitions/snapshot.sh 7500000
+
+
+# Create tables in the target database
+TEMP_SQL=$(mktemp "${TEST_DIR}/temp_sql.XXXXXX")
+
+if [ ! -f "$TEMP_SQL" ]; then
+  echo "Failed to create temporary file in ${TEST_DIR}"
+  exit 1
+fi
+
+# Writing temporary SQL script to create DB objects for the test
+cat <<EOF > "$TEMP_SQL"
+\i schema.sql;
+\i ${TESTS_DIR}/pg/partitions/schema.sql;
+
+CREATE SCHEMA IF NOT EXISTS schema2;
+SET SEARCH_PATH TO schema2;
+\i schema.sql;
+EOF
+
+# Run the temporary SQL script
+run_ysql ${TARGET_DB_NAME} "\i ${TEMP_SQL}"
+
+# Clean up the temporary SQL script
+rm "$TEMP_SQL"
+
+echo "End of init-db script"

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source "${SCRIPTS}/functions.sh"
+
+function create_tables_sql_function() {
+    local db_name=$1
+    local table_count=$2
+
+    run_ysql ${db_name} "
+    DO \$\$
+    BEGIN
+        FOR i IN 1..${table_count} LOOP
+            EXECUTE format(
+                'CREATE TABLE survey%1\$s (
+                    Industry_Year INT,
+                    Industry_Aggregation_Level VARCHAR(100),
+                    Industry_Code VARCHAR(10),
+                    Industry_Type TEXT,
+                    Dollar_Percentage TEXT,
+                    Industry_name CHAR(10),
+                    Variable_Sub_Category VARCHAR(100),
+                    Variable_Category VARCHAR(100),
+                    Industry_Valuation TEXT,
+                    Industry_Class TEXT
+                );',
+                i
+            );
+        END LOOP;
+    END
+    \$\$;
+    "
+    echo "All ${table_count} tables created successfully."
+}
+
+step "Create target database."
+run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
+run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME} with COLOCATION=TRUE;"
+
+# Step: Initialize Target Database with 1250 tables
+create_tables_sql_function ${TARGET_DB_NAME} 1250
+
+echo "End of init-db script"

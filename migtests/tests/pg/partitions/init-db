@@ -12,7 +12,9 @@ run_psql postgres "CREATE DATABASE ${SOURCE_DB_NAME};"
 echo "Initialising source database."
 
 run_psql ${SOURCE_DB_NAME} "\i schema.sql;"
-run_psql ${SOURCE_DB_NAME} "\i snapshot.sql;"
+
+chmod +x ./snapshot.sh
+./snapshot.sh 1000
 
 if [ -n "${SOURCE_REPLICA_DB_NAME}" ] && [ "${SOURCE_REPLICA_DB_NAME}" != "${SOURCE_DB_NAME}" ];
 then

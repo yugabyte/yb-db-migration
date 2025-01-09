@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -e
+set -x
+
+source ${SCRIPTS}/functions.sh
+
+step "Create target database."
+run_ysql yugabyte "DROP DATABASE IF EXISTS ${TARGET_DB_NAME};"
+run_ysql yugabyte "CREATE DATABASE ${TARGET_DB_NAME};"
+
+echo "Initialising target database."
+
+run_ysql ${TARGET_DB_NAME} "
+CREATE TABLE public.accounts_large (
+    block bigint NOT NULL,
+    address text NOT NULL,
+    dc_balance bigint DEFAULT 0 NOT NULL,
+    dc_nonce bigint DEFAULT 0 NOT NULL,
+    security_balance bigint DEFAULT 0 NOT NULL,
+    security_nonce bigint DEFAULT 0 NOT NULL,
+    balance bigint DEFAULT 0 NOT NULL,
+    nonce bigint DEFAULT 0 NOT NULL,
+    staked_balance bigint,
+    PRIMARY KEY (block, address)
+);
+"
+
+echo "End of init-db script"
