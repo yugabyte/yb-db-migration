@@ -10,12 +10,10 @@ FORCE_INSTALL="false"
 PRINT_DEPENDENCIES="false"
 
 centos_yum_package_requirements=(
-  "gcc|min|0"
   "make|min|0"
   "sqlite|min|0"
   "perl|min|0"
   "perl-DBI|min|0"
-  "perl-App-cpanminus|min|0"
   "perl-ExtUtils-MakeMaker|min|0"
   "mysql-devel|min|0"
   "libaio|min|0"
@@ -27,32 +25,27 @@ centos_yum_package_requirements=(
 )
 
 ubuntu_apt_package_requirements=(
+  "make|min|0"
   "sqlite3|min|0"
-  "gcc|min|0"
   "perl|min|0"
   "libdbi-perl|min|0"
   "libaio1|min|0"
-  "cpanminus|min|0"
   "libmysqlclient-dev|min|0"
+  "libmodule-build-perl|min|0"
   "oracle-instantclient-tools|exact|21.5.0.0.0"
   "oracle-instantclient-basic|exact|21.5.0.0.0"
   "oracle-instantclient-devel|exact|21.5.0.0.0"
   "oracle-instantclient-jdbc|exact|21.5.0.0.0"
   "oracle-instantclient-sqlplus|exact|21.5.0.0.0"
+  "oracle-instantclient12.1-basic|min|0"
 )
 
 # Array with format "Module::Name|requirement_type|required_version|tarball_name"
 cpan_modules_requirements=(
-  "Compress::Raw::Bzip2|min|2.213|Compress-Raw-Bzip2-2.213.tar.gz"
-  "Compress::Raw::Zlib|min|2.213|Compress-Raw-Zlib-2.213.tar.gz"
   "Test::Deep|min|0|Test-Deep-1.204.tar.gz"
-  "DBI::DBD|min|0|DBI-1.645.tgz"
   "Capture::Tiny|min|0|Capture-Tiny-0.48.tar.gz"
   "Mock::Config|min|0.02|Mock-Config-0.03.tar.gz"
-  "Devel::CheckLib|min|1.16|Devel-CheckLib-1.16.tar.gz"
-  "DBD::mysql|min|5.005|DBD-mysql-5.005.tar.gz"
   "Test::NoWarnings|min|1.06|Test-NoWarnings-1.06.tar.gz"
-  "DBD::Oracle|min|1.83|DBD-Oracle-1.83.tar.gz"
   "String::Random|min|0|String-Random-0.32.tar.gz"
   "IO::Compress::Base|min|0|IO-Compress-2.213.tar.gz"
 )
@@ -506,6 +499,24 @@ centos_main() {
         # Call the install function with module details
         install_perl_module "$module_name" "$requirement_type" "$required_version" "$package"
     done
+    sudo yum install -y -q mariadb-connector-c*.rpm 1>&2
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "\e[31mERROR: mariadb-connector-c did not get installed.\e[0m"
+        exit 1
+    fi
+    sudo yum install -y -q perl-DBD-MySQL*.rpm 1>&2
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "\e[31mERROR: perl-DBD-MySQL did not get installed.\e[0m"
+        exit 1
+    fi
+    sudo yum install -y -q perl-DBD-Oracle*.rpm 1>&2
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "\e[31mERROR: perl-DBD-Oracle did not get installed.\e[0m"
+        exit 1
+    fi
 
     echo "Installing ora2pg..."
     sudo yum install -y -q ora2pg*.noarch.rpm 1>&2 
@@ -685,6 +696,19 @@ ubuntu_main() {
         # Call the install function with module details
         install_perl_module "$module_name" "$requirement_type" "$required_version" "$package"
     done
+    sudo dpkg -i ./libdbd-mysql-perl*.deb 1>&2
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "\e[31mERROR: libdbd-mysql-perl did not get installed.\e[0m"
+        exit 1
+    fi
+    sudo dpkg -i ./libdbd-oracle-perl*.deb 1>&2
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "\e[31mERROR: libdbd-oracle-perl did not get installed.\e[0m"
+        exit 1
+    fi
+
 
     echo "Installing ora2pg..."
     sudo apt install -y -q ./ora2pg*all.deb 1>&2
@@ -735,6 +759,9 @@ print_steps_to_install_oic_on_ubuntu() {
     echo ""
     echo -e "\e[33moracle-instantclient-sqlplus:\e[0m"
     echo "https://s3.us-west-2.amazonaws.com/downloads.yugabyte.com/repos/apt/pool/main/oracle-instantclient-sqlplus_21.5.0.0.0-1_amd64.deb"
+    echo ""
+    echo -e "\e[33moracle-instantclient12.1-basic:\e[0m"
+    echo "https://s3.us-west-2.amazonaws.com/downloads.yugabyte.com/repos/apt/pool/main/oracle-instantclient12.1-basic_12.1.0.2.0-1_amd64.deb"
 }
 
 check_apt_dependencies() {
