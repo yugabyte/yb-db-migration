@@ -230,6 +230,14 @@ jobs:
       # - name: "TEST: pg-basic-non-public-fall-back-test"
       #   run: migtests/scripts/live-migration-fallb-run-test.sh pg/basic-non-public-live-test
 
+      - name: "TEST: pg-datatypes-live-test"
+        if: ${{ !cancelled() && matrix.test_group == 'live_basic' }}
+        run: migtests/scripts/live-migration-run-test.sh pg/datatypes
+
+      - name: "TEST: pg-datatypes-fall-forward-test"
+        if: ${{ !cancelled() && matrix.test_group == 'live_basic' }}
+        run: migtests/scripts/live-migration-fallf-run-test.sh pg/datatypes
+
       - name: "TEST: pg-datatypes-fall-back-test"
         if: ${{ !cancelled() && matrix.test_group == 'live_basic' }}
         run: migtests/scripts/live-migration-fallb-run-test.sh pg/datatypes

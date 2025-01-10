@@ -35,6 +35,13 @@
     "percentage_complete": 100
   },
   {
+    "table_name": "public.\"hstore_example\"",
+    "status": "DONE",
+    "total_count": 13,
+    "imported_count": 13,
+    "percentage_complete": 100
+  },
+  {
     "table_name": "public.\"null_and_default\"",
     "status": "DONE",
     "total_count": 2,

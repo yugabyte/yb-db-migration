@@ -29,6 +29,7 @@ EXPECTED_ROW_COUNT = {
 	'datetime_type2': 2, 
 	'null_and_default' :2,
 	'decimal_types': 4,
+	'hstore_example': 15,
 }
 
 EXPECTED_SUM_OF_COLUMN = {
@@ -65,6 +66,7 @@ EXPECTED_ROW_COUNT_FF = {
 	'datetime_type2': 3, 
 	'null_and_default' :2,
 	'decimal_types': 4,
+	'hstore_example': 15,
 }
 
 EXPECTED_SUM_OF_COLUMN_FF = {

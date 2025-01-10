@@ -26,6 +26,7 @@ EXPECTED_ROW_COUNT = {
 	'datetime_type2': 2, 
 	'null_and_default' :2,
 	'decimal_types': 3,
+	'hstore_example': 13,
 }
 
 EXPECTED_SUM_OF_COLUMN = {
@@ -73,7 +74,7 @@ def migration_completed_checks_fb():
 def migration_completed_checks(tgt):
 	table_list = tgt.get_table_names("public")
 	print("table_list:", table_list)
-	assert len(table_list) == 7
+	assert len(table_list) == 8
 
 	got_row_count = tgt.row_count_of_all_tables("public")
 	for table_name, row_count in EXPECTED_ROW_COUNT.items():

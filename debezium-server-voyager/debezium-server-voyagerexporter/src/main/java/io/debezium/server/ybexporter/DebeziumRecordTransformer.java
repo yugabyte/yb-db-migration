@@ -16,12 +16,16 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
+import java.util.HashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class ensures of doing any transformation of the record received from debezium
  * before actually writing that record.
  */
 public class DebeziumRecordTransformer implements RecordTransformer {
+	private static final Logger LOGGER = LoggerFactory.getLogger(DebeziumRecordTransformer.class);
 
     private JsonConverter jsonConverter;
     public DebeziumRecordTransformer(){
@@ -70,6 +74,30 @@ public class DebeziumRecordTransformer implements RecordTransformer {
             case BYTES:
             case STRUCT:
                 return toKafkaConnectJsonConverted(fieldValue, field);
+            case MAP:
+		        StringBuilder mapString = new StringBuilder();
+                for (Map.Entry<String, String> entry : ((HashMap<String, String>) fieldValue).entrySet()) {
+                    String key = entry.getKey();
+                    String val = entry.getValue();
+                    key = key.replace("\"", "\\\""); // escaping double quotes " -> \" ( "\"a"b\"" -> "\\"a\"b\\"" )
+                    val = val.replace("\"", "\\\""); 
+                    key = key.replace("\\\\", "\\"); // fixing \\-> \ ( "\\"a\"b\\"" -> "\"a\\"b\"" )
+                    val = val.replace("\\\\", "\\");
+                    mapString.append("\"");
+                    mapString.append(key);
+                    mapString.append("\"");
+                    mapString.append(" => ");
+                    mapString.append("\"");
+                    mapString.append(val);
+                    mapString.append("\"");
+                    mapString.append(",");
+                }
+                if(mapString.length() == 0) {
+                    return "";
+                } 
+                LOGGER.info("map value = {}", mapString);
+                return mapString.toString().substring(0, mapString.length() - 1);
+            
         }
         return fieldValue.toString();
     }

@@ -61,3 +61,25 @@ SET v1 = '{"new": "data"}', v2 = B'1111000011', v5=B'001010100101010101010101010
 
 DELETE FROM datatypes2
 WHERE 5 = ANY(v3);
+
+-- INSERT INTO hstore_example (data) 
+-- VALUES 
+--     ('key7 => value7, key8 => value8');
+
+-- UPDATE hstore_example 
+-- SET data = delete(data, 'key2')
+-- WHERE id = 8;
+
+-- DELETE FROM hstore_example WHERE data ? 'key5';
+
+-- INSERT INTO hstore_example (data) 
+-- VALUES 
+-- (hstore('"{""key1"":""value1"",""key2"":""value2""}"', '{"key1=value1, key2={"key1=value1, key2=value2"}"}'));
+
+-- UPDATE hstore_example 
+-- SET data = hstore('{"key1=value1, key2=value2"}', '{"key1=value1, key2={"key1=value1, key2=value2"}"}')
+-- WHERE id = 15;
+
+-- UPDATE hstore_example 
+-- SET data = '"{\"key1=value1, key2=value2\"}"=>"{\"key1=value1, key2={\"key1=value1, key2=value2\"}\"}"'
+-- WHERE id = 14;

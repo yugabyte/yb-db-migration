@@ -136,6 +136,14 @@ main() {
 	    fi
 	fi
 
+	if [ "${TEST_DIR}" = "${TESTS_DIR}/pg/datatypes" ]; then
+		cat ${EXPORT_DIR}/data/hstore_example_data.sql
+		if [ "${BETA_FAST_DATA_EXPORT}" = "1" ]; then
+			cat ${EXPORT_DIR}/data/schemas/source_db_exporter/hstore_example_schema.json
+			cat ${EXPORT_DIR}/logs/debezium-source_db_exporter.log
+		fi
+	fi
+
 	step "Fix data."
 	if [ -x "${TEST_DIR}/fix-data" ]
 	then

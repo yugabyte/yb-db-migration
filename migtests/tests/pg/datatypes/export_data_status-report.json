@@ -33,5 +33,10 @@
     "table_name": "null_and_default",
     "status": "DONE",
     "exported_count": 2
+  },
+  {
+    "exported_count": 13,
+    "status": "DONE",
+    "table_name": "hstore_example"
   }
 ]

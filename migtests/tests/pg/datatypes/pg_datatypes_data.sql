@@ -34,3 +34,22 @@ select * from datatypes2;
 insert into null_and_default (id) VALUES (1);
 insert into null_and_default VALUES(2, NULL, NULL, NULL);
 
+INSERT INTO hstore_example (data) 
+VALUES 
+    ('"key1"=>"value1", "key2"=>"value2"'),
+    (hstore('a"b', 'd"a')),
+    (NULL),
+    (''),
+    ('key1 => value1, key2 => value2'),
+    (hstore(ARRAY['key1', 'key2'], ARRAY['value1', 'value2'])),
+    ('key7 => value7, key8 => 123, key9 => true'),
+    ('"paperback" => "243",
+     "publisher" => "postgresqltutorial.com",
+     "language"  => "English",
+     "ISBN-13"   => "978-1449370000",
+     "weight"    => "11.2 ounces"'),
+    (hstore(ROW(1,'{"key1=value1, key2=value2"}'))),
+    (hstore('json_field', '{"key1=value1, key2={"key1=value1, key2=value2"}"}')), --hstore() key and values need no extra processing
+    ('"{\"key1=value1, key2=value2\"}"=>"{\"key1=value1, key2={\"key1=value1, key2=value2\"}\"}"'), --single quotes string need to escaped properly
+    (hstore('"{""key1"":""value1"",""key2"":""value2""}"', '{"key1=value1, key2={"key1=value1, key2=value2"}"}')),
+    (hstore('"{key1:value1,key2:value2}"', '{"key1=value1, key2={"key1=value1, key2=value2"}"}'));

@@ -41,5 +41,9 @@ create table datatypes2(id serial primary key, v1 json, v2 BIT(10), v3 int ARRAY
 drop table if exists null_and_default;
 create table null_and_default(id int PRIMARY KEY, b boolean default false, i int default 10, val varchar default 'testdefault');
 
+create EXTENSION hstore;
 
-
+CREATE TABLE hstore_example (
+    id SERIAL PRIMARY KEY,
+    data hstore
+);
