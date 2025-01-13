@@ -59,7 +59,7 @@ CREATE TABLE diagnostics (
 	migration_type TEXT,
 	time_taken_sec int,
 	status TEXT,
-	host_ip character varying 255 -- set by the callhome service
+	host_ip character varying (255), -- set in callhome service
 	PRIMARY KEY (migration_uuid, migration_phase, collected_at)
 
 );

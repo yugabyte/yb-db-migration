@@ -48,7 +48,11 @@ var assessMigrationBulkCmd = &cobra.Command{
 	Long:  "Bulk Assessment of multiple schemas across one or more Oracle database instances",
 
 	PreRun: func(cmd *cobra.Command, args []string) {
-		err := validateFleetConfigFile(fleetConfigPath)
+		err := retrieveMigrationUUID()
+		if err != nil {
+			utils.ErrExit("failed to get migration UUID: %w", err)
+		}
+		err = validateFleetConfigFile(fleetConfigPath)
 		if err != nil {
 			utils.ErrExit("validating fleet config file: %s", err.Error())
 		}
@@ -154,11 +158,6 @@ func assessMigrationBulk() error {
 	bulkAssessmentDBConfigs, err = parseFleetConfigFile(fleetConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse fleet config file: %w", err)
-	}
-
-	err = retrieveMigrationUUID()
-	if err != nil {
-		return fmt.Errorf("failed to get migration UUID: %w", err)
 	}
 
 	for _, dbConfig := range bulkAssessmentDBConfigs {

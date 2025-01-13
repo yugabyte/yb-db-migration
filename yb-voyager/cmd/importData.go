@@ -80,8 +80,12 @@ var importDataCmd = &cobra.Command{
 		if importerRole == "" {
 			importerRole = TARGET_DB_IMPORTER_ROLE
 		}
+		err := retrieveMigrationUUID()
+		if err != nil {
+			utils.ErrExit("failed to get migration UUID: %w", err)
+		}
 		sourceDBType = GetSourceDBTypeFromMSR()
-		err := validateImportFlags(cmd, importerRole)
+		err = validateImportFlags(cmd, importerRole)
 		if err != nil {
 			utils.ErrExit("Error: %s", err.Error())
 		}
@@ -130,11 +134,6 @@ func importDataCommandFn(cmd *cobra.Command, args []string) {
 	record, err := metaDB.GetMigrationStatusRecord()
 	if err != nil {
 		utils.ErrExit("Failed to get migration status record: %s", err)
-	}
-
-	err = retrieveMigrationUUID()
-	if err != nil {
-		utils.ErrExit("failed to get migration UUID: %w", err)
 	}
 
 	// Check if target DB has the required permissions

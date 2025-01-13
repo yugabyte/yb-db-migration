@@ -1125,10 +1125,6 @@ func checkConversions(sqlInfoArr []sqlInfo, filePath string) {
 }
 
 func analyzeSchema() {
-	err := retrieveMigrationUUID()
-	if err != nil {
-		utils.ErrExit("failed to get migration UUID: %w", err)
-	}
 
 	utils.PrintAndLog("Analyzing schema for target YugabyteDB version %s\n", targetDbVersion)
 	schemaAnalysisStartedEvent := createSchemaAnalysisStartedEvent()
@@ -1290,9 +1286,13 @@ var analyzeSchemaCmd = &cobra.Command{
 		"For more details and examples, visit https://docs.yugabyte.com/preview/yugabyte-voyager/reference/schema-migration/analyze-schema/",
 	Long: ``,
 	PreRun: func(cmd *cobra.Command, args []string) {
+		err := retrieveMigrationUUID()
+		if err != nil {
+			utils.ErrExit("failed to get migration UUID: %w", err)
+		}
 		validOutputFormats := []string{"html", "json", "txt", "xml"}
 		validateReportOutputFormat(validOutputFormats, analyzeSchemaReportFormat)
-		err := validateAndSetTargetDbVersionFlag()
+		err = validateAndSetTargetDbVersionFlag()
 		if err != nil {
 			utils.ErrExit("%v", err)
 		}

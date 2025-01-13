@@ -72,10 +72,13 @@ var importDataFileCmd = &cobra.Command{
 		sourceDBType = POSTGRESQL // dummy value - this command is not affected by it
 		sqlname.SourceDBType = sourceDBType
 		CreateMigrationProjectIfNotExists(sourceDBType, exportDir)
-
+		err := retrieveMigrationUUID()
+		if err != nil {
+			utils.ErrExit("failed to get migration UUID: %w", err)
+		}
 		tconf.Schema = strings.ToLower(tconf.Schema)
 		tdb = tgtdb.NewTargetDB(&tconf)
-		err := tdb.Init()
+		err = tdb.Init()
 		if err != nil {
 			utils.ErrExit("Failed to initialize the target DB: %s", err)
 		}
@@ -91,10 +94,6 @@ var importDataFileCmd = &cobra.Command{
 		dataStore = datastore.NewDataStore(dataDir)
 		importFileTasks := prepareImportFileTasks()
 		prepareForImportDataCmd(importFileTasks)
-		err := retrieveMigrationUUID()
-		if err != nil {
-			utils.ErrExit("failed to get migration UUID: %w", err)
-		}
 		importData(importFileTasks)
 		packAndSendImportDataFilePayload(COMPLETE, "")
 

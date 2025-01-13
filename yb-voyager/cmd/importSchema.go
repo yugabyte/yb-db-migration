@@ -47,8 +47,12 @@ var importSchemaCmd = &cobra.Command{
 		if tconf.TargetDBType == "" {
 			tconf.TargetDBType = YUGABYTEDB
 		}
+		err := retrieveMigrationUUID()
+		if err != nil {
+			utils.ErrExit("failed to get migration UUID: %w", err)
+		}
 		sourceDBType = GetSourceDBTypeFromMSR()
-		err := validateImportFlags(cmd, TARGET_DB_IMPORTER_ROLE)
+		err = validateImportFlags(cmd, TARGET_DB_IMPORTER_ROLE)
 		if err != nil {
 			utils.ErrExit("Error: %s", err.Error())
 		}
@@ -79,10 +83,6 @@ var flagRefreshMViews utils.BoolStr
 var invalidTargetIndexesCache map[string]bool
 
 func importSchema() error {
-	err := retrieveMigrationUUID()
-	if err != nil {
-		return fmt.Errorf("failed to get migration UUID: %w", err)
-	}
 
 	tconf.Schema = strings.ToLower(tconf.Schema)
 
@@ -93,7 +93,7 @@ func importSchema() error {
 		// available always and this is just for initialisation of tdb and marking it nil again back.
 		tconf.Schema = "public"
 		tdb = tgtdb.NewTargetDB(&tconf)
-		err = tdb.Init()
+		err := tdb.Init()
 		if err != nil {
 			utils.ErrExit("Failed to initialize the target DB: %s", err)
 		}
