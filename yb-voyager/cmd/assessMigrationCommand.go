@@ -1610,7 +1610,7 @@ func generateAssessmentReportJson(reportDir string) error {
 	if err != nil {
 		return fmt.Errorf("unable to build migration complexity explanation for json report: %w", err)
 	}
-	log.Info(assessmentReport.MigrationComplexityExplanation)
+	log.Infof("migration complexity explanation: %q", assessmentReport.MigrationComplexityExplanation)
 
 	strReport, err := json.MarshalIndent(assessmentReport, "", "\t")
 	if err != nil {

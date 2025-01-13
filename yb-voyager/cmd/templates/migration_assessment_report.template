@@ -167,7 +167,7 @@
             {{ end }}
         {{end}}
 
-        {{if ne .MigrationComplexity "NOT AVAILABLE"}}
+        {{if and (ne .MigrationComplexity "NOT AVAILABLE") (ne (len .MigrationComplexityExplanation) 0)}}
             <h2>Migration Complexity Explanation</h2>
             <p>{{ .MigrationComplexityExplanation }}</p>
         {{end}}
