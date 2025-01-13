@@ -108,7 +108,7 @@ var assessMigrationCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		err := assessMigration()
 		if err != nil {
-			packAndSendAssessMigrationPayload(ERROR, err.Error())
+			// packAndSendAssessMigrationPayload(ERROR, err.Error())
 			utils.ErrExit("failed to assess migration: %s", err)
 		}
 		packAndSendAssessMigrationPayload(COMPLETE, "")

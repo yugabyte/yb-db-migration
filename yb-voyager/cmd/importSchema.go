@@ -58,7 +58,7 @@ var importSchemaCmd = &cobra.Command{
 		tconf.ImportMode = true
 		err := importSchema()
 		if err != nil {
-			packAndSendImportSchemaPayload(ERROR, err.Error())
+			// packAndSendImportSchemaPayload(ERROR, err.Error())
 			utils.ErrExit("error in importing schema: %s", err)
 		}
 		packAndSendImportSchemaPayload(COMPLETE, "")
